@@ -7,6 +7,7 @@ vi.mock("@kepler.gl/components", () => ({
   CustomPanelsFactory: () => null,
   PanelHeaderFactory: () => () => null,
   PanelToggleFactory: () => null,
+  SidebarFactory: () => null,
   PanelTabFactory: () => null,
   Icons: {
     Db: () => null,
@@ -33,7 +34,7 @@ it("keeps native map controls and all application panels in one keyboard-accessi
     />,
   );
   expect(screen.getAllByRole("tablist")).toHaveLength(1);
-  expect(screen.getAllByRole("tab")).toHaveLength(9);
+  expect(screen.getAllByRole("tab")).toHaveLength(10);
   for (const name of [
     "Layers",
     "Filters",
@@ -41,6 +42,7 @@ it("keeps native map controls and all application panels in one keyboard-accessi
     "Base map",
     "Catalog",
     "Plugins",
+    "Metadata Structure",
     "Workflow",
     "Jobs",
     "Settings",

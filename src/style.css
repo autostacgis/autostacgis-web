@@ -25,20 +25,87 @@ body {
   margin-top: 4px;
   color: #a7d8c6;
 }
-.workspace-tabs {
+.workspace-shell {
+  position: absolute;
+  z-index: 10;
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: min(480px, calc(100% - 24px));
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 1px solid #40535f;
-  padding: 0 12px 8px;
-  gap: 4px;
+  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-rows: 80px minmax(0, 1fr);
+  background: #182832;
+  box-shadow: 0 4px 20px #0008;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.workspace-shell.is-expanded {
+  width: calc(100% - 24px);
+}
+.workspace-heading {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.workspace-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 80px;
+}
+.workspace-header > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.panel-expand {
+  flex: none;
+  margin-right: 12px;
+  font-size: 22px;
+  padding: 5px 8px;
+}
+.workspace-rail {
+  overflow: auto;
+  border-right: 1px solid #40535f;
+}
+.workspace-content {
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+}
+.workspace-content .side-panel__content {
+  height: 100%;
+  width: 100%;
+  padding: 12px;
+}
+.workspace-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
 }
 .workspace-tab {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 2px 5px;
+  justify-content: center;
+  min-height: 62px;
+  flex-shrink: 0;
+  padding: 6px 2px;
   cursor: pointer;
   border-radius: 4px;
+}
+.workspace-layout.expanded .maps {
+  visibility: hidden;
+  pointer-events: none;
+}
+.workspace-brand img {
+  width: 28px;
+  height: 28px;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.workspace-brand strong {
+  white-space: nowrap;
 }
 .workspace-tab[aria-selected="true"] {
   background: #285348;
@@ -211,4 +278,59 @@ pre {
 }
 .import {
   font-size: 11px;
+}
+
+.json-editor {
+  border: 1px solid #40535f;
+  border-radius: 5px;
+  padding: 8px;
+  margin: 8px 0 14px;
+  min-width: 0;
+}
+.json-toolbar,
+.json-value,
+.json-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.json-toolbar strong {
+  flex: 1;
+}
+.json-toolbar button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.json-value select {
+  width: 95px;
+  flex-shrink: 0;
+}
+.json-value input,
+.json-value select {
+  margin: 5px 0;
+}
+.json-children {
+  border-left: 1px solid #40535f;
+  padding-left: 12px;
+}
+.json-field {
+  padding: 5px 0;
+}
+.json-field > button {
+  float: right;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.json-editor textarea {
+  min-height: 180px;
+}
+.plugin-catalog {
+  margin-bottom: 20px;
+}
+
+.workspace-layout.expanded .map-control,
+.workspace-layout.expanded .geocoder-container,
+.workspace-layout.expanded .bottom-widget {
+  visibility: hidden;
+  pointer-events: none;
 }

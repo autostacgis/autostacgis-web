@@ -106,12 +106,54 @@ class Backend {
       );
     });
   }
+  async wheelDirectory() {
+    try {
+      const value = JSON.parse(
+        await fs.readFile(path.join(this.data, "active-backend.json"), "utf8"),
+      );
+      const directory = path.resolve(value.directory);
+      if (!directory.startsWith(path.resolve(this.data, "releases") + path.sep))
+        throw Error("Invalid backend release directory");
+      return directory;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      return path.join(this.bundle, "wheels");
+    }
+  }
+  uvPath() {
+    return path.join(
+      this.runtime,
+      "bootstrap",
+      runtimeSpec().uvDirectory,
+      "uv" + (process.platform === "win32" ? ".exe" : ""),
+    );
+  }
+  async installWheels(directory) {
+    const wheels = (await fs.readdir(directory))
+      .filter((name) => name.endsWith(".whl"))
+      .map((name) => path.join(directory, name));
+    await this.run(this.uvPath(), [
+      "pip",
+      "install",
+      "--python",
+      this.python,
+      "--reinstall-package",
+      "autostacgis",
+      "--reinstall-package",
+      "autostacgis-plugins",
+      "--reinstall-package",
+      "autostacgis-postgresql",
+      ...wheels,
+    ]);
+  }
   async fingerprint() {
     const hash = crypto.createHash("sha256").update(JSON.stringify(manifest));
-    for (const name of (await fs.readdir(path.join(this.bundle, "wheels")))
+    for (const name of (await fs.readdir(await this.wheelDirectory()))
       .filter((name) => name.endsWith(".whl"))
       .sort())
-      hash.update(await fs.readFile(path.join(this.bundle, "wheels", name)));
+      hash.update(
+        await fs.readFile(path.join(await this.wheelDirectory(), name)),
+      );
     return hash.digest("hex");
   }
   async status() {
@@ -230,9 +272,10 @@ class Backend {
         pgArchive,
         this.postgres,
       ]);
-      const wheels = (await fs.readdir(path.join(this.bundle, "wheels")))
+      const wheelDirectory = await this.wheelDirectory();
+      const wheels = (await fs.readdir(wheelDirectory))
         .filter((name) => name.endsWith(".whl"))
-        .map((name) => path.join(this.bundle, "wheels", name));
+        .map((name) => path.join(wheelDirectory, name));
       await this.run(
         uv,
         [
@@ -292,6 +335,7 @@ class Backend {
           windowsHide: true,
           env: {
             ...nativeEnvironment(),
+            AUTOSTACGIS_UV: this.uvPath(),
             AUTOSTACGIS_DATABASE_PASSWORD: credentials.databasePassword,
             AUTOSTACGIS_API_TOKEN: credentials.token,
           },

@@ -59,3 +59,27 @@ it("isolates the embedded interpreter from host Python configuration", () => {
   expect(env.PYTHONHOME).toBeUndefined();
   expect(env.PYTHONNOUSERSITE).toBe("1");
 });
+it("verifies downloaded bytes before accepting a runtime or backend asset", async () => {
+  const { createHash } = await import("node:crypto");
+  const { Backend } = require("./backend.cjs");
+  const directory = await mkdtemp(path.join(tmpdir(), "autostacgis-checksum-"));
+  try {
+    const content = Buffer.from("verified wheel bytes");
+    const backend = new Backend({
+      bundle: directory,
+      data: directory,
+      fetcher: async () => new Response(content),
+    });
+    const asset = {
+      url: "https://example.com/release.whl",
+      sha256: createHash("sha256").update(content).digest("hex"),
+    };
+    const file = await backend.archive(asset, directory);
+    expect(await readFile(file)).toEqual(content);
+    await expect(
+      backend.archive({ ...asset, sha256: "0".repeat(64) }, directory),
+    ).rejects.toThrow("checksum");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

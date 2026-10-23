@@ -36,6 +36,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Verify native embedded backend and persistent restart
         run: node scripts/smoke-embedded.mjs
+      - name: Verify plugins and strict metadata
+        run: node scripts/smoke-plugins.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: autostacgis-${{ matrix.os }}

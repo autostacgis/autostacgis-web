@@ -9,6 +9,7 @@ const {
 } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { Updates } = require("./updater.cjs");
 const { Backend } = require("./backend.cjs");
 app.setName("AutostacGIS");
 protocol.registerSchemesAsPrivileged([
@@ -49,6 +50,7 @@ app.whenReady().then(() => {
   });
   window = new BrowserWindow({
     title: "AutostacGIS",
+    icon: path.resolve(__dirname, "../assets/icons/icon.png"),
     width: 1500,
     height: 960,
     minWidth: 1000,
@@ -80,6 +82,15 @@ app.whenReady().then(() => {
     )
       throw new Error("Untrusted IPC sender");
   };
+  const updates = new Updates({
+    app,
+    backend,
+    send: (value) => window?.webContents.send("updates:state", value),
+  });
+  ipcMain.handle("updates:action", async (event, action) => {
+    trusted(event);
+    return updates.action(action);
+  });
   for (const method of ["status", "download", "start", "stop"])
     ipcMain.handle("backend:" + method, async (event) => {
       trusted(event);

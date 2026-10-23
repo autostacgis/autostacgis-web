@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import {
   WorkspaceContext,
+  WorkspaceLayout,
   selectWorkspacePanel,
   type WorkspaceTab,
 } from "./workspace";
 import Map, { addGeojson, addRaster } from "./Map";
+import JsonEditor from "./JsonEditor";
+import PluginCatalog from "./PluginCatalog";
+import UpdateSettings from "./UpdateSettings";
 import PluginSettings from "./PluginSettings";
 import { Api, assetHref, nextPage, resolveItem } from "./api";
 import { buildConfiguration } from "./configuration";
@@ -37,6 +41,9 @@ export default function App() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [request, setRequest] = useState(
     JSON.stringify(empty.request, null, 2),
+  );
+  const [structure, setStructure] = useState(
+    '{"schemas":[],"inline":{},"strict":true}',
   );
   const [query, setQuery] = useState('{"limit":50}');
   const [items, setItems] = useState<Json[]>([]);
@@ -73,6 +80,13 @@ export default function App() {
   };
   function loadConfiguration(value: Json, plugins = descriptor?.plugins || []) {
     setDocument(value);
+    setStructure(
+      JSON.stringify(
+        value.metadata_structure || { schemas: [], inline: {}, strict: true },
+        null,
+        2,
+      ),
+    );
     setRequest(JSON.stringify(value.request, null, 2));
     setSelected(
       new Set(value.catalog?.plugins.map((plugin: Json) => plugin.use) || []),
@@ -134,7 +148,11 @@ export default function App() {
   function config() {
     if (!descriptor) throw new Error("Connect to an AutostacGIS backend");
     return buildConfiguration(
-      { ...document, request: JSON.parse(request) },
+      {
+        ...document,
+        request: JSON.parse(request),
+        metadata_structure: JSON.parse(structure),
+      },
       selected,
       settings,
       descriptor.plugins,
@@ -221,10 +239,10 @@ export default function App() {
             </small>
             <label>
               STAC search parameters
-              <textarea
-                aria-label="Search parameters"
+              <JsonEditor
+                label="Search parameters"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={setQuery}
               />
             </label>
             <small>
@@ -322,6 +340,43 @@ export default function App() {
             ))}
           </>
         )}
+        {tab === "Metadata Structure" && (
+          <>
+            <h2>Metadata Structure</h2>
+            <p>
+              Reference STAC Item JSON Schema URLs in schemas and declare
+              additional fields in the inline Item schema. Strict validation
+              rejects undeclared fields, including nested metadata.
+            </p>
+            <JsonEditor
+              label="Metadata structure"
+              value={structure}
+              onChange={setStructure}
+            />
+          </>
+        )}
+        {tab === "Plugins" && (
+          <PluginCatalog
+            api={api}
+            onInstalled={async () => {
+              if (api) {
+                const value: Descriptor = await api.request(
+                  "autostacgis/plugins",
+                );
+                setDescriptor(value);
+                setSettings((previous) => ({
+                  ...Object.fromEntries(
+                    value.plugins.map((p) => [
+                      p.id,
+                      JSON.stringify(p.defaults, null, 2),
+                    ]),
+                  ),
+                  ...previous,
+                }));
+              }
+            }}
+          />
+        )}
         {tab === "Plugins" &&
           (descriptor ? (
             <>
@@ -354,11 +409,10 @@ export default function App() {
             </label>
             <label>
               Request / goal
-              <textarea
-                className="large"
-                aria-label="Request"
+              <JsonEditor
+                label="Request"
                 value={request}
-                onChange={(event) => setRequest(event.target.value)}
+                onChange={setRequest}
               />
             </label>
             <p>
@@ -449,7 +503,13 @@ export default function App() {
                 {row.id}
               </button>
             ))}
-            {output && <pre>{JSON.stringify(output, null, 2)}</pre>}
+            {output && (
+              <JsonEditor
+                label="Result"
+                value={JSON.stringify(output, null, 2)}
+                readOnly
+              />
+            )}
           </>
         )}
         {tab === "Jobs" && (
@@ -510,6 +570,7 @@ export default function App() {
         )}
         {tab === "Settings" && (
           <>
+            <UpdateSettings />
             <h2>Connection settings</h2>
             <fieldset className="connection-mode">
               <legend>Connect to</legend>
@@ -694,8 +755,10 @@ export default function App() {
     </div>
   );
   return (
-    <WorkspaceContext.Provider value={renderPanel}>
-      <Map />
-    </WorkspaceContext.Provider>
+    <WorkspaceLayout>
+      <WorkspaceContext.Provider value={renderPanel}>
+        <Map />
+      </WorkspaceContext.Provider>
+    </WorkspaceLayout>
   );
 }

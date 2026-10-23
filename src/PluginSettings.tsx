@@ -1,3 +1,4 @@
+import JsonEditor from "./JsonEditor";
 import type { Descriptor } from "./types";
 export default function PluginSettings({
   descriptor,
@@ -45,7 +46,9 @@ export default function PluginSettings({
             key={plugin.id}
             open={selected.has(plugin.id) || undefined}
           >
-            <summary>{plugin.id}</summary>
+            <summary>
+              {plugin.id} <small>{plugin.version}</small>
+            </summary>
             <label>
               <input
                 type="checkbox"
@@ -65,18 +68,22 @@ export default function PluginSettings({
             <small>Requires: {plugin.requires.join(", ") || "none"}</small>
             <label>
               Settings (JSON)
-              <textarea
-                aria-label={`${plugin.id} settings`}
+              <JsonEditor
+                label={`${plugin.id} settings`}
                 value={
                   settings[plugin.id] ??
                   JSON.stringify(plugin.defaults, null, 2)
                 }
-                onChange={(event) => onSettings(plugin.id, event.target.value)}
+                onChange={(value) => onSettings(plugin.id, value)}
               />
             </label>
             <details>
               <summary>Parameter contract</summary>
-              <pre>{JSON.stringify(plugin.settings_schema, null, 2)}</pre>
+              <JsonEditor
+                label={`${plugin.id} contract`}
+                value={JSON.stringify(plugin.settings_schema, null, 2)}
+                readOnly
+              />
               {plugin.contract?.solver && (
                 <p>Requires solver: {plugin.contract.solver}</p>
               )}

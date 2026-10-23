@@ -6,3 +6,5 @@ resources/backend/
 .env
 
 .DS_Store
+
+electron-dist/

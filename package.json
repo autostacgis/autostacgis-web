@@ -1,6 +1,6 @@
 {
   "name": "autostacgis-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Kepler.gl STAC workspace and optional bundled PostgreSQL backend",
   "author": "AutostacGIS",
@@ -14,10 +14,12 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "prepare:backend": "node scripts/bundle-backend.mjs",
-    "dist": "npm run prepare:backend && npm run build && node scripts/package.mjs",
-    "dist:dir": "npm run prepare:backend && npm run build && node scripts/package.mjs --dir",
+    "dist": "npm run prepare:backend && npm run build && npm run bundle:electron && node scripts/package.mjs",
+    "dist:dir": "npm run prepare:backend && npm run build && npm run bundle:electron && node scripts/package.mjs --dir",
     "format:check": "prettier --check src electron scripts vite.config.ts vitest.config.ts package.json tsconfig.json index.html",
-    "postinstall": "install-electron"
+    "postinstall": "install-electron",
+    "icons": "node scripts/icons.mjs",
+    "bundle:electron": "node scripts/bundle-electron.mjs"
   },
   "dependencies": {
     "@deck.gl/mapbox": "9.3.1",
@@ -28,15 +30,18 @@
     "@kepler.gl/utils": "3.3.0-alpha.18",
     "@loaders.gl/core": "^4.5.4",
     "buffer": "^6.0.3",
+    "electron-updater": "^6.8.9",
     "maplibre-gl": "^6.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-redux": "^9.1.0",
     "redux": "^5.0.1",
+    "semver": "^7.8.5",
     "styled-components": "^6.1.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.0",
@@ -48,12 +53,13 @@
     "cross-env": "^7.0.3",
     "electron": "^45.0.0",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "jsdom": "^26.1.0",
     "prettier": "^3.9.10",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-wasm": "^3.4.1",
-    "vitest": "^3.2.0",
+    "vitest": "^4.1.12",
     "wait-on": "^8.0.0"
   },
   "engines": {
@@ -67,8 +73,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/*.cjs",
-      "electron/*.json",
+      "electron-dist/**/*",
+      "assets/icons/icon.png",
       "package.json",
       "!node_modules/**"
     ],
@@ -83,24 +89,38 @@
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icons/icon.icns"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "assets/icons/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "category": "Science"
+      "category": "Science",
+      "icon": "assets/icons/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "extraMetadata": {
+      "main": "electron-dist/main.cjs"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "autostacgis",
+        "repo": "autostacgis-web",
+        "releaseType": "release"
+      }
+    ]
   },
   "overrides": {
     "maplibre-gl": "$maplibre-gl",

@@ -1,6 +1,7 @@
 export type Json = any; // STAC extensions and plugin schemas intentionally accept arbitrary JSON.
 export type Plugin = {
   id: string;
+  version?: string;
   capability: string;
   requires: string[];
   defaults: Json;
@@ -21,6 +22,8 @@ export type BackendStatus = {
   message?: string;
 };
 export type Desktop = {
+  update?: (action: string) => Promise<Json>;
+  onUpdate?: (callback: (value: Json) => void) => () => void;
   chooseInputDirectory: () => Promise<string | null>;
   status: () => Promise<BackendStatus>;
   download: () => Promise<BackendStatus>;

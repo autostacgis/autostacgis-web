@@ -73,7 +73,7 @@ export default function Map() {
         id="map"
         appName="AutostacGIS"
         appWebsite="https://github.com/autostacgis/autostacgis-web"
-        version="0.1.0"
+        version="0.2.0"
         width={size.width}
         height={size.height}
         mapboxApiAccessToken=""
