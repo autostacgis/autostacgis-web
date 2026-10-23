@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+import {
+  WorkspaceContext,
+  selectWorkspacePanel,
+  type WorkspaceTab,
+} from "./workspace";
 import Map, { addGeojson, addRaster } from "./Map";
 import PluginSettings from "./PluginSettings";
 import { Api, assetHref, nextPage, resolveItem } from "./api";
@@ -13,8 +18,14 @@ export default function App() {
     window.localStorage.getItem("api-url") || "http://127.0.0.1:8080",
   );
   const [token, setToken] = useState("");
+  const [showEmbeddedToken, setShowEmbeddedToken] = useState(false);
   const [api, setApi] = useState<Api | null>(null);
-  const [tab, setTab] = useState("Catalog");
+  const [connectionMode, setConnectionMode] = useState<"embedded" | "remote">(
+    window.desktop &&
+      window.localStorage.getItem("connection-mode") !== "remote"
+      ? "embedded"
+      : "remote",
+  );
   const [status, setStatus] = useState(
     "Connect to a STAC API, or start the bundled backend when you need it.",
   );
@@ -81,7 +92,11 @@ export default function App() {
       ),
     );
   }
-  async function connect(target = url, bearer = token) {
+  async function connect(
+    target = url,
+    bearer = token,
+    persistRemote = connectionMode === "remote",
+  ) {
     const client = new Api(target, bearer);
     const landing = await client.request("");
     setApi(client);
@@ -89,7 +104,7 @@ export default function App() {
     setItems([]);
     setChosen(new Set());
     setNext(null);
-    window.localStorage.setItem("api-url", client.root);
+    if (persistRemote) window.localStorage.setItem("api-url", client.root);
     const catalog = await client.request("collections");
     setCollections(catalog.collections.map((value: Json) => value.id));
     try {
@@ -106,7 +121,7 @@ export default function App() {
       );
     } catch (error) {
       setStatus(
-        `Connected to STAC. AutoSTACGIS controls unavailable: ${error}`,
+        `Connected to STAC. AutostacGIS controls unavailable: ${error}`,
       );
     }
   }
@@ -117,7 +132,7 @@ export default function App() {
     setStatus(`${value.features.length} items on this page.`);
   }
   function config() {
-    if (!descriptor) throw new Error("Connect to an AutoSTACGIS backend");
+    if (!descriptor) throw new Error("Connect to an AutostacGIS backend");
     return buildConfiguration(
       { ...document, request: JSON.parse(request) },
       selected,
@@ -178,7 +193,7 @@ export default function App() {
       /\.(tif|tiff)(\?|$)/i.test(uri.href)
     ) {
       if (!api || !descriptor)
-        throw new Error("Connect to an AutoSTACGIS backend for its COG tiler");
+        throw new Error("Connect to an AutostacGIS backend for its COG tiler");
       const info = await api.request(
         "cog/info?url=" + encodeURIComponent(uri.href),
       );
@@ -192,362 +207,368 @@ export default function App() {
       );
     }
   }
-  return (
-    <>
-      <header>
-        <div className="brand">
-          <b>AutoSTACGIS</b>
-          <span>STAC workspace</span>
-        </div>
-        <label>
-          API URL
-          <input
-            aria-label="API URL"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-          />
-        </label>
-        <label>
-          Token
-          <input
-            aria-label="API token"
-            type="password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-          />
-        </label>
-        <button disabled={busy} onClick={() => perform(() => connect())}>
-          Connect
-        </button>
-      </header>
-      <main>
-        <Map />
-        <aside>
-          <nav>
-            {["Catalog", "Plugins", "Workflow", "Jobs", "Backend"].map(
-              (name) => (
-                <button
-                  key={name}
-                  className={tab === name ? "active" : ""}
-                  onClick={() => setTab(name)}
-                >
-                  {name}
-                </button>
-              ),
-            )}
-          </nav>
-          <p className="status" role="status">
-            {status}
-          </p>
-          <section>
-            {tab === "Catalog" && (
-              <>
-                <h2>Search the catalog</h2>
-                <small>
-                  Collections: {collections.join(", ") || "connect to list"}
-                </small>
+  const renderPanel = (tab: WorkspaceTab) => (
+    <div className="workspace-panel">
+      <p className="status" role="status">
+        {status}
+      </p>
+      <section>
+        {tab === "Catalog" && (
+          <>
+            <h2>Search the catalog</h2>
+            <small>
+              Collections: {collections.join(", ") || "connect to list"}
+            </small>
+            <label>
+              STAC search parameters
+              <textarea
+                aria-label="Search parameters"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <small>
+              Use collections, bbox, intersects, datetime, filter/CQL2, sortby
+              and other standard search fields.
+            </small>
+            <div className="row">
+              <button
+                disabled={!api || busy}
+                onClick={() =>
+                  perform(async () => {
+                    const body = JSON.parse(query);
+                    await showPage(
+                      await api!.search(body),
+                      new URL("search", api!.root).href,
+                      body,
+                    );
+                  })
+                }
+              >
+                Search
+              </button>
+              <button
+                disabled={!api || !next || busy}
+                onClick={() =>
+                  perform(async () => {
+                    await showPage(
+                      await api!.request(next!.url, next!.method, next!.body),
+                      next!.url,
+                      next!.body,
+                    );
+                  })
+                }
+              >
+                Next page
+              </button>
+              <button
+                disabled={!items.length}
+                onClick={() =>
+                  addGeojson(
+                    { type: "FeatureCollection", features: items },
+                    "STAC footprints",
+                  )
+                }
+              >
+                Map footprints
+              </button>
+            </div>
+            {items.map((item) => (
+              <article key={key(item)}>
                 <label>
-                  STAC search parameters
-                  <textarea
-                    aria-label="Search parameters"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
-                </label>
-                <small>
-                  Use collections, bbox, intersects, datetime, filter/CQL2,
-                  sortby and other standard search fields.
-                </small>
-                <div className="row">
-                  <button
-                    disabled={!api || busy}
-                    onClick={() =>
-                      perform(async () => {
-                        const body = JSON.parse(query);
-                        await showPage(
-                          await api!.search(body),
-                          new URL("search", api!.root).href,
-                          body,
-                        );
-                      })
-                    }
-                  >
-                    Search
-                  </button>
-                  <button
-                    disabled={!api || !next || busy}
-                    onClick={() =>
-                      perform(async () => {
-                        await showPage(
-                          await api!.request(
-                            next!.url,
-                            next!.method,
-                            next!.body,
-                          ),
-                          next!.url,
-                          next!.body,
-                        );
-                      })
-                    }
-                  >
-                    Next page
-                  </button>
-                  <button
-                    disabled={!items.length}
-                    onClick={() =>
-                      addGeojson(
-                        { type: "FeatureCollection", features: items },
-                        "STAC footprints",
-                      )
-                    }
-                  >
-                    Map footprints
-                  </button>
-                </div>
-                {items.map((item) => (
-                  <article key={key(item)}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={chosen.has(key(item))}
-                        onChange={(event) => {
-                          const value = new Set(chosen);
-                          event.target.checked
-                            ? value.add(key(item))
-                            : value.delete(key(item));
-                          setChosen(value);
-                        }}
-                      />
-                      <b>{item.id}</b>
-                    </label>
-                    <small>{item.collection}</small>
-                    {Object.entries(item.assets || {}).map(
-                      ([name, asset]: [string, any]) => (
-                        <div className="asset" key={name}>
-                          <button
-                            onClick={() =>
-                              perform(() =>
-                                openAsset(
-                                  asset,
-                                  `${item.id} / ${name}`,
-                                  item,
-                                  name,
-                                ),
-                              )
-                            }
-                          >
-                            View {name}
-                          </button>
-                          <a
-                            href={assetHref(asset.href)}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Download
-                          </a>
-                          <small>{asset.type}</small>
-                        </div>
-                      ),
-                    )}
-                  </article>
-                ))}
-              </>
-            )}
-            {tab === "Plugins" &&
-              (descriptor ? (
-                <>
-                  <h2>Plugin settings</h2>
-                  <PluginSettings
-                    descriptor={descriptor}
-                    selected={selected}
-                    settings={settings}
-                    onSelect={selectPlugin}
-                    onSettings={(name, value) =>
-                      setSettings({ ...settings, [name]: value })
-                    }
-                    capability={capability}
-                    onCapability={setCapability}
-                    onStart={(name) => perform(() => invoke("jobs", name))}
-                  />
-                </>
-              ) : (
-                <p>
-                  Connect to an AutoSTACGIS backend to load plugin contracts.
-                </p>
-              ))}
-            {tab === "Workflow" && (
-              <>
-                <h2>Build a workflow</h2>
-                <label>
-                  Configuration name
                   <input
-                    value={configName}
-                    onChange={(event) => setConfigName(event.target.value)}
+                    type="checkbox"
+                    checked={chosen.has(key(item))}
+                    onChange={(event) => {
+                      const value = new Set(chosen);
+                      event.target.checked
+                        ? value.add(key(item))
+                        : value.delete(key(item));
+                      setChosen(value);
+                    }}
                   />
+                  <b>{item.id}</b>
                 </label>
-                <label>
-                  Request / goal
-                  <textarea
-                    className="large"
-                    aria-label="Request"
-                    value={request}
-                    onChange={(event) => setRequest(event.target.value)}
-                  />
-                </label>
-                <p>
-                  {chosen.size
-                    ? `${chosen.size} selected STAC Items will be used as inputs.`
-                    : "No Items selected: discover through configured metadata sources."}
-                </p>
-                <div className="row">
-                  {["validate", "plan", "jobs"].map((operation) => (
-                    <button
-                      disabled={!descriptor || busy}
-                      key={operation}
-                      onClick={() => perform(() => invoke(operation))}
-                    >
-                      {operation === "jobs" ? "Run" : operation}
-                    </button>
-                  ))}
-                </div>
+                <small>{item.collection}</small>
+                {Object.entries(item.assets || {}).map(
+                  ([name, asset]: [string, any]) => (
+                    <div className="asset" key={name}>
+                      <button
+                        onClick={() =>
+                          perform(() =>
+                            openAsset(
+                              asset,
+                              `${item.id} / ${name}`,
+                              item,
+                              name,
+                            ),
+                          )
+                        }
+                      >
+                        View {name}
+                      </button>
+                      <a
+                        href={assetHref(asset.href)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download
+                      </a>
+                      <small>{asset.type}</small>
+                    </div>
+                  ),
+                )}
+              </article>
+            ))}
+          </>
+        )}
+        {tab === "Plugins" &&
+          (descriptor ? (
+            <>
+              <h2>Plugin settings</h2>
+              <PluginSettings
+                descriptor={descriptor}
+                selected={selected}
+                settings={settings}
+                onSelect={selectPlugin}
+                onSettings={(name, value) =>
+                  setSettings({ ...settings, [name]: value })
+                }
+                capability={capability}
+                onCapability={setCapability}
+                onStart={(name) => perform(() => invoke("jobs", name))}
+              />
+            </>
+          ) : (
+            <p>Connect to an AutostacGIS backend to load plugin contracts.</p>
+          ))}
+        {tab === "Workflow" && (
+          <>
+            <h2>Build a workflow</h2>
+            <label>
+              Configuration name
+              <input
+                value={configName}
+                onChange={(event) => setConfigName(event.target.value)}
+              />
+            </label>
+            <label>
+              Request / goal
+              <textarea
+                className="large"
+                aria-label="Request"
+                value={request}
+                onChange={(event) => setRequest(event.target.value)}
+              />
+            </label>
+            <p>
+              {chosen.size
+                ? `${chosen.size} selected STAC Items will be used as inputs.`
+                : "No Items selected: discover through configured metadata sources."}
+            </p>
+            <div className="row">
+              {["validate", "plan", "jobs"].map((operation) => (
+                <button
+                  disabled={!descriptor || busy}
+                  key={operation}
+                  onClick={() => perform(() => invoke(operation))}
+                >
+                  {operation === "jobs" ? "Run" : operation}
+                </button>
+              ))}
+            </div>
+            <div className="row">
+              <button
+                disabled={!descriptor || busy}
+                onClick={() =>
+                  perform(async () => {
+                    await api!.request(
+                      "autostacgis/configurations/" +
+                        encodeURIComponent(configName),
+                      "PUT",
+                      config(),
+                    );
+                    setStatus("Configuration saved");
+                  })
+                }
+              >
+                Save
+              </button>
+              <button
+                disabled={!descriptor || busy}
+                onClick={() =>
+                  perform(async () =>
+                    setConfigurations(
+                      await api!.request("autostacgis/configurations"),
+                    ),
+                  )
+                }
+              >
+                Load list
+              </button>
+              <button
+                disabled={!descriptor}
+                onClick={() =>
+                  perform(async () => {
+                    const blob = new Blob([JSON.stringify(config(), null, 2)], {
+                      type: "application/json",
+                    });
+                    const link = globalThis.document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = configName + ".json";
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+                  })
+                }
+              >
+                Export
+              </button>
+              <label className="import">
+                Import
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={(event) =>
+                    perform(async () => {
+                      const file = event.target.files?.[0];
+                      if (file)
+                        loadConfiguration(JSON.parse(await file.text()));
+                    })
+                  }
+                />
+              </label>
+            </div>
+            {configurations.map((row) => (
+              <button
+                key={row.id}
+                onClick={() => {
+                  loadConfiguration(row.document);
+                  setConfigName(row.id);
+                }}
+              >
+                {row.id}
+              </button>
+            ))}
+            {output && <pre>{JSON.stringify(output, null, 2)}</pre>}
+          </>
+        )}
+        {tab === "Jobs" && (
+          <>
+            <h2>Workflow jobs</h2>
+            <button
+              disabled={!descriptor || busy}
+              onClick={() =>
+                perform(async () =>
+                  setJobs(await api!.request("autostacgis/jobs")),
+                )
+              }
+            >
+              Refresh
+            </button>
+            {jobs.map((job) => (
+              <article key={job.id}>
+                <b>{job.state}</b>
+                <small>{job.id}</small>
+                {job.error && <p>{job.error}</p>}
                 <div className="row">
                   <button
-                    disabled={!descriptor || busy}
+                    onClick={() =>
+                      perform(async () => {
+                        const value = await api!.request(
+                          "autostacgis/jobs/" + job.id,
+                        );
+                        setOutput(value);
+                        if (value.result) {
+                          setItems(value.result.features);
+                          setChosen(new Set());
+                          addGeojson(value.result, "Workflow outputs");
+                          selectWorkspacePanel("Catalog");
+                        } else setStatus(value.state);
+                      })
+                    }
+                  >
+                    View result
+                  </button>
+                  <button
+                    disabled={!["queued", "running"].includes(job.state)}
                     onClick={() =>
                       perform(async () => {
                         await api!.request(
-                          "autostacgis/configurations/" +
-                            encodeURIComponent(configName),
-                          "PUT",
-                          config(),
+                          "autostacgis/jobs/" + job.id,
+                          "DELETE",
                         );
-                        setStatus("Configuration saved");
+                        setJobs(await api!.request("autostacgis/jobs"));
                       })
                     }
                   >
-                    Save
+                    Cancel
                   </button>
-                  <button
-                    disabled={!descriptor || busy}
-                    onClick={() =>
-                      perform(async () =>
-                        setConfigurations(
-                          await api!.request("autostacgis/configurations"),
-                        ),
-                      )
-                    }
-                  >
-                    Load list
-                  </button>
-                  <button
-                    disabled={!descriptor}
-                    onClick={() =>
-                      perform(async () => {
-                        const blob = new Blob(
-                          [JSON.stringify(config(), null, 2)],
-                          { type: "application/json" },
-                        );
-                        const link = globalThis.document.createElement("a");
-                        link.href = URL.createObjectURL(blob);
-                        link.download = configName + ".json";
-                        link.click();
-                        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-                      })
-                    }
-                  >
-                    Export
-                  </button>
-                  <label className="import">
-                    Import
-                    <input
-                      type="file"
-                      accept="application/json,.json"
-                      onChange={(event) =>
-                        perform(async () => {
-                          const file = event.target.files?.[0];
-                          if (file)
-                            loadConfiguration(JSON.parse(await file.text()));
-                        })
-                      }
-                    />
-                  </label>
                 </div>
-                {configurations.map((row) => (
-                  <button
-                    key={row.id}
-                    onClick={() => {
-                      loadConfiguration(row.document);
-                      setConfigName(row.id);
+              </article>
+            ))}
+          </>
+        )}
+        {tab === "Settings" && (
+          <>
+            <h2>Connection settings</h2>
+            <fieldset className="connection-mode">
+              <legend>Connect to</legend>
+              {(["embedded", "remote"] as const).map((mode) => (
+                <label key={mode}>
+                  <input
+                    type="radio"
+                    name="connection-mode"
+                    checked={connectionMode === mode}
+                    disabled={mode === "embedded" && !window.desktop}
+                    onChange={() => {
+                      setConnectionMode(mode);
+                      window.localStorage.setItem("connection-mode", mode);
+                      setApi(null);
+                      setDescriptor(null);
+                      setItems([]);
+                      setChosen(new Set());
+                      setStatus("Choose a connection below.");
                     }}
-                  >
-                    {row.id}
-                  </button>
-                ))}
-                {output && <pre>{JSON.stringify(output, null, 2)}</pre>}
-              </>
-            )}
-            {tab === "Jobs" && (
-              <>
-                <h2>Workflow jobs</h2>
+                  />
+                  {mode === "embedded" ? "Embedded backend" : "Remote API"}
+                </label>
+              ))}
+            </fieldset>
+            {connectionMode === "remote" && (
+              <div className="connection-fields">
+                {" "}
+                <label>
+                  API URL
+                  <input
+                    aria-label="API URL"
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Token
+                  <input
+                    aria-label="API token"
+                    type="password"
+                    value={token}
+                    onChange={(event) => setToken(event.target.value)}
+                  />
+                </label>
                 <button
-                  disabled={!descriptor || busy}
-                  onClick={() =>
-                    perform(async () =>
-                      setJobs(await api!.request("autostacgis/jobs")),
-                    )
-                  }
+                  disabled={busy}
+                  onClick={() => perform(() => connect())}
                 >
-                  Refresh
+                  Connect
                 </button>
-                {jobs.map((job) => (
-                  <article key={job.id}>
-                    <b>{job.state}</b>
-                    <small>{job.id}</small>
-                    {job.error && <p>{job.error}</p>}
-                    <div className="row">
-                      <button
-                        onClick={() =>
-                          perform(async () => {
-                            const value = await api!.request(
-                              "autostacgis/jobs/" + job.id,
-                            );
-                            setOutput(value);
-                            if (value.result) {
-                              setItems(value.result.features);
-                              setChosen(new Set());
-                              addGeojson(value.result, "Workflow outputs");
-                              setTab("Catalog");
-                            } else setStatus(value.state);
-                          })
-                        }
-                      >
-                        View result
-                      </button>
-                      <button
-                        disabled={!["queued", "running"].includes(job.state)}
-                        onClick={() =>
-                          perform(async () => {
-                            await api!.request(
-                              "autostacgis/jobs/" + job.id,
-                              "DELETE",
-                            );
-                            setJobs(await api!.request("autostacgis/jobs"));
-                          })
-                        }
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </>
+              </div>
             )}
-            {tab === "Backend" && (
+            {connectionMode === "embedded" && (
               <>
-                <h2>Optional local backend</h2>
+                <h3>Embedded backend</h3>
                 <p>
-                  Connect to your own URL above, or download and start the
-                  bundled PostgreSQL service. Nothing starts when the app opens.
+                  Download and start a private PostgreSQL/PostGIS service on
+                  this computer. Nothing starts when the app opens. Data stays
+                  here between sessions.
                 </p>
                 {window.desktop ? (
                   <>
@@ -560,26 +581,42 @@ export default function App() {
                           )
                         }
                       >
-                        Check runtime
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(() => window.desktop!.downloadRuntime())
-                        }
-                      >
-                        Download Docker runtime
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(() => window.desktop!.openInstaller())
-                        }
-                      >
-                        Open downloaded installer
+                        Check status
                       </button>
                     </div>
                     <p>{backend.message}</p>
+                    {backend.running && backend.url && (
+                      <details>
+                        <summary>Connection details for other clients</summary>
+                        <label>
+                          API URL
+                          <input
+                            aria-label="Embedded API URL"
+                            readOnly
+                            value={backend.url}
+                          />
+                        </label>
+                        <label>
+                          API token
+                          <input
+                            aria-label="Embedded API token"
+                            readOnly
+                            type={showEmbeddedToken ? "text" : "password"}
+                            value={backend.token || ""}
+                          />
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={showEmbeddedToken}
+                            onChange={(event) =>
+                              setShowEmbeddedToken(event.target.checked)
+                            }
+                          />
+                          Show embedded API token
+                        </label>
+                      </details>
+                    )}
                     <button
                       disabled={busy}
                       onClick={() =>
@@ -588,7 +625,8 @@ export default function App() {
                             await window.desktop!.chooseInputDirectory();
                           if (directory)
                             setStatus(
-                              "Input folder selected. Restart the local backend to use it at /data/incoming.",
+                              "Input folder selected. Use this path in local file providers and watchdog settings: " +
+                                directory,
                             );
                         })
                       }
@@ -599,10 +637,15 @@ export default function App() {
                       <button
                         disabled={busy}
                         onClick={() =>
-                          perform(() => window.desktop!.download())
+                          perform(async () => {
+                            setBackend(await window.desktop!.download());
+                            setStatus(
+                              "Embedded backend downloaded. Choose Start and connect when ready.",
+                            );
+                          })
                         }
                       >
-                        Download backend
+                        Download embedded backend
                       </button>
                       <button
                         disabled={busy}
@@ -610,13 +653,11 @@ export default function App() {
                           perform(async () => {
                             const value = await window.desktop!.start();
                             setBackend(value);
-                            setUrl(value.url!);
-                            setToken(value.token!);
-                            await connect(value.url!, value.token!);
+                            await connect(value.url!, value.token!, false);
                           })
                         }
                       >
-                        Start backend
+                        Start and connect
                       </button>
                       <button
                         disabled={busy}
@@ -624,11 +665,15 @@ export default function App() {
                           perform(async () => {
                             await window.desktop!.stop();
                             setBackend({ ...backend, running: false });
-                            setStatus("Local backend stopped");
+                            setApi(null);
+                            setDescriptor(null);
+                            setStatus(
+                              "Embedded backend stopped. Your data is retained.",
+                            );
                           })
                         }
                       >
-                        Stop backend
+                        Stop embedded backend
                       </button>
                     </div>
                     <pre aria-label="Backend log">
@@ -643,9 +688,14 @@ export default function App() {
                 )}
               </>
             )}
-          </section>
-        </aside>
-      </main>
-    </>
+          </>
+        )}
+      </section>
+    </div>
+  );
+  return (
+    <WorkspaceContext.Provider value={renderPanel}>
+      <Map />
+    </WorkspaceContext.Provider>
   );
 }

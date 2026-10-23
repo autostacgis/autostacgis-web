@@ -23,11 +23,9 @@ export type BackendStatus = {
 export type Desktop = {
   chooseInputDirectory: () => Promise<string | null>;
   status: () => Promise<BackendStatus>;
-  download: () => Promise<void>;
+  download: () => Promise<BackendStatus>;
   start: () => Promise<BackendStatus>;
   stop: () => Promise<void>;
-  downloadRuntime: () => Promise<void>;
-  openInstaller: () => Promise<void>;
   onLog: (callback: (message: string) => void) => () => void;
 };
 declare global {

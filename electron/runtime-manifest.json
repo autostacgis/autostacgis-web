@@ -1,0 +1,82 @@
+{
+  "postgres": "embedded-postgres-v16.13.0-r1",
+  "uv": "0.13.5",
+  "python": "3.12",
+  "targets": {
+    "darwin-arm64": {
+      "postgres": {
+        "url": "https://github.com/serverpod/serverpod/releases/download/embedded-postgres-v16.13.0-r1/serverpod-postgres-16.13.0-r1-macos-arm64.tar.xz",
+        "sha256": "ea775e3b5cd94ac1b486339309354f4590e16d39e7b9d56576a1c1bc17bffec6"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73"
+      },
+      "uvDirectory": "uv-aarch64-apple-darwin",
+      "extensions": {
+        "url": "https://repo.maven.apache.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-darwin-arm64v8/16.13.0/embedded-postgres-binaries-darwin-arm64v8-16.13.0.jar",
+        "sha256": "359050041c5b8ae2ebb205d351f7d822b663e7dbe7125acc68dea244d8cf142b"
+      }
+    },
+    "darwin-x64": {
+      "postgres": {
+        "url": "https://github.com/serverpod/serverpod/releases/download/embedded-postgres-v16.13.0-r1/serverpod-postgres-16.13.0-r1-macos-x64.tar.xz",
+        "sha256": "074ddc199a3dd2ebc19e215ecbf8d5a6422a32d949fba958f629b5ca54e72552"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-x86_64-apple-darwin.tar.gz",
+        "sha256": "b0f52b0e3945b4107d89024ea38e625683011fbfc05a0d98f9fa2d6dcee28c66"
+      },
+      "uvDirectory": "uv-x86_64-apple-darwin",
+      "extensions": {
+        "url": "https://repo.maven.apache.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-darwin-amd64/16.13.0/embedded-postgres-binaries-darwin-amd64-16.13.0.jar",
+        "sha256": "7a7e51e01a2d1e14fd43dc1b7230175ec9099397bd61f20352b216865bac4fcb"
+      }
+    },
+    "linux-arm64": {
+      "postgres": {
+        "url": "https://github.com/serverpod/serverpod/releases/download/embedded-postgres-v16.13.0-r1/serverpod-postgres-16.13.0-r1-linux-arm64.tar.xz",
+        "sha256": "982b04d006548f44ccce6a92fbc9009d5c7eb8c8df585ee65218ea3559244c2d"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403"
+      },
+      "uvDirectory": "uv-aarch64-unknown-linux-gnu",
+      "extensions": {
+        "url": "https://repo.maven.apache.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-linux-arm64v8/16.13.0/embedded-postgres-binaries-linux-arm64v8-16.13.0.jar",
+        "sha256": "c2ef7cc6c484646f2806f43ef0f020ea5ac961fbbf4542f8fc36161729b993b0"
+      }
+    },
+    "linux-x64": {
+      "postgres": {
+        "url": "https://github.com/serverpod/serverpod/releases/download/embedded-postgres-v16.13.0-r1/serverpod-postgres-16.13.0-r1-linux-x64.tar.xz",
+        "sha256": "5f96962ea7b9006e72a7d820527174636cb293df4cc871cec10b080410415f07"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f"
+      },
+      "uvDirectory": "uv-x86_64-unknown-linux-gnu",
+      "extensions": {
+        "url": "https://repo.maven.apache.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-linux-amd64/16.13.0/embedded-postgres-binaries-linux-amd64-16.13.0.jar",
+        "sha256": "b30ca66d33ab0c4e2030f2e68ca20dcf238e7dff273da14da9aad2b6abf71ad3"
+      }
+    },
+    "win32-x64": {
+      "postgres": {
+        "url": "https://github.com/serverpod/serverpod/releases/download/embedded-postgres-v16.13.0-r1/serverpod-postgres-16.13.0-r1-windows-x64.tar.xz",
+        "sha256": "c40826f74ad8395ef96dead957743f1745e03d0f3cce067caa99d40b74900fd0"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-x86_64-pc-windows-msvc.zip",
+        "sha256": "a38b8d1902b7cfbc76b423ba1bb456f623f42064cdc72628b6075b89afd1019a"
+      },
+      "uvDirectory": "",
+      "extensions": {
+        "url": "https://repo.maven.apache.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-windows-amd64/16.13.0/embedded-postgres-binaries-windows-amd64-16.13.0.jar",
+        "sha256": "d4c5d56f2d13a44d276a5f8276fd9dfc19a18eb21c8613701d7fbd4e88b2f123"
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 const require = createRequire(import.meta.url);
-it("does not create a pool, invoke Docker, or write credentials until explicitly requested", async () => {
+it("does not download, launch a service, or write credentials until requested", async () => {
   const cp = require("node:child_process");
   const spawn = vi.spyOn(cp, "spawn");
   const { Backend } = require("./backend.cjs");
@@ -18,39 +18,44 @@ it("does not create a pool, invoke Docker, or write credentials until explicitly
     });
     expect(spawn).not.toHaveBeenCalled();
     await expect(stat(path.join(directory, "data"))).rejects.toThrow();
+    const status = await backend.status();
+    expect(status).toMatchObject({ installed: false, running: false });
+    expect(spawn).not.toHaveBeenCalled();
     const first = await backend.environment();
     const second = await backend.environment();
-    expect(first.env.AUTOSTACGIS_API_TOKEN).toMatch(/^[a-f0-9]{64}$/);
-    expect(second.env).toEqual(first.env);
+    expect(first.credentials.token).toMatch(/^[a-f0-9]{64}$/);
+    expect(second.credentials).toEqual(first.credentials);
     expect(await readFile(first.file, "utf8")).not.toContain("replace-with");
+    await expect(backend.start()).rejects.toThrow(
+      "Download the embedded backend first",
+    );
     expect(spawn).not.toHaveBeenCalled();
   } finally {
     spawn.mockRestore();
     await rm(directory, { recursive: true, force: true });
   }
 });
-
-it("selects official runtime downloads for each supported desktop platform", () => {
-  const { runtimeDownload } = require("./backend.cjs");
-  expect(runtimeDownload("darwin", "arm64").url).toContain("/mac/main/arm64/");
-  expect(runtimeDownload("win32", "x64").url).toContain("/win/main/amd64/");
-  expect(runtimeDownload("linux", "x64", "deb").name).toBe(
-    "docker-desktop-amd64.deb",
-  );
-  expect(runtimeDownload("linux", "x64", "rpm").name).toBe(
-    "docker-desktop-x86_64.rpm",
-  );
-  expect(() => runtimeDownload("linux", "arm64")).toThrow("Docker Engine");
-});
-
-it("finds Docker even when a GUI launch has a minimal PATH", async () => {
-  const fs = require("node:fs/promises");
-  const access = vi.spyOn(fs, "access").mockResolvedValue(undefined);
-  try {
-    const { dockerExecutable } = require("./backend.cjs");
-    expect(await dockerExecutable()).not.toBe("docker");
-    expect(access).toHaveBeenCalled();
-  } finally {
-    access.mockRestore();
+it("pins verified native PostgreSQL, contrib, and Python bootstrap bundles on supported platforms", () => {
+  const { runtimeSpec } = require("./backend.cjs");
+  for (const [platform, arch] of [
+    ["darwin", "arm64"],
+    ["darwin", "x64"],
+    ["win32", "x64"],
+    ["linux", "x64"],
+    ["linux", "arm64"],
+  ]) {
+    const spec = runtimeSpec(platform, arch);
+    for (const asset of [spec.postgres, spec.uv, spec.extensions]) {
+      expect(asset.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(asset.url).toMatch(/^https:/);
+    }
   }
+  expect(() => runtimeSpec("win32", "arm64")).toThrow("remote API");
+});
+it("isolates the embedded interpreter from host Python configuration", () => {
+  const { nativeEnvironment } = require("./backend.cjs");
+  const env = nativeEnvironment();
+  expect(env.PYTHONPATH).toBeUndefined();
+  expect(env.PYTHONHOME).toBeUndefined();
+  expect(env.PYTHONNOUSERSITE).toBe("1");
 });

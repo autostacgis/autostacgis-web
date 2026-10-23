@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir } from "node:fs/promises";
+import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 const source = path.resolve(
@@ -13,16 +13,16 @@ const result = spawnSync(
 );
 if (result.status !== 0)
   throw new Error("Build engine wheels before packaging the backend");
+const serviceWheel = spawnSync(
+  python,
+  ["-m", "build", "--wheel", "--outdir", path.join(source, "wheels"), source],
+  { stdio: "inherit" },
+);
+if (serviceWheel.status !== 0)
+  throw new Error("Build the native service wheel before packaging");
+await rm(target, { recursive: true, force: true });
 await mkdir(target, { recursive: true });
-for (const name of [
-  "src",
-  "wheels",
-  "pyproject.toml",
-  "README.md",
-  "LICENSE",
-  "Dockerfile",
-  "compose.yaml",
-])
+for (const name of ["src", "wheels", "pyproject.toml", "README.md", "LICENSE"])
   await cp(path.join(source, name), path.join(target, name), {
     recursive: true,
   });

@@ -4,3 +4,5 @@ release/
 resources/backend/
 *.tsbuildinfo
 .env
+
+.DS_Store

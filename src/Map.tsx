@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import KeplerGl from "@kepler.gl/components";
+import { KeplerWorkspace as KeplerGl } from "./sidebar";
 import { addDataToMap, updateVisData, wrapTo } from "@kepler.gl/actions";
 import { processGeojson } from "@kepler.gl/processors";
 import { store } from "./store";
@@ -71,6 +71,9 @@ export default function Map() {
     <div ref={ref} className="map">
       <KeplerGl
         id="map"
+        appName="AutostacGIS"
+        appWebsite="https://github.com/autostacgis/autostacgis-web"
+        version="0.1.0"
         width={size.width}
         height={size.height}
         mapboxApiAccessToken=""

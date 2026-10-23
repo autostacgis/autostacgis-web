@@ -1,235 +1,370 @@
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
-const { constants } = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { pipeline } = require("node:stream/promises");
 const { Readable } = require("node:stream");
-async function dockerExecutable() {
-  // GUI launchers frequently omit these locations from PATH.
-  const candidates =
-    process.platform === "darwin"
-      ? [
-          "/usr/local/bin/docker",
-          "/opt/homebrew/bin/docker",
-          "/Applications/Docker.app/Contents/Resources/bin/docker",
-        ]
-      : process.platform === "win32"
-        ? [
-            path.join(
-              process.env.ProgramFiles || "C:\\Program Files",
-              "Docker",
-              "Docker",
-              "resources",
-              "bin",
-              "docker.exe",
-            ),
-          ]
-        : [
-            "/usr/bin/docker",
-            "/usr/local/bin/docker",
-            "/opt/docker-desktop/bin/docker",
-          ];
-  for (const candidate of candidates) {
-    try {
-      await fs.access(
-        candidate,
-        process.platform === "win32" ? constants.F_OK : constants.X_OK,
-      );
-      return candidate;
-    } catch {
-      /* Try the next standard installation. */
-    }
-  }
-  return "docker";
+const manifest = require("./runtime-manifest.json");
+function runtimeSpec(platform = process.platform, arch = process.arch) {
+  const spec = manifest.targets[`${platform}-${arch}`];
+  if (!spec)
+    throw new Error(
+      `The embedded backend is unavailable on ${platform}/${arch}; connect to a remote API.`,
+    );
+  return spec;
 }
-function runtimeDownload(platform, arch, linuxFormat = "deb") {
-  if (platform === "darwin")
-    return {
-      name: "Docker.dmg",
-      url: `https://desktop.docker.com/mac/main/${arch === "arm64" ? "arm64" : "amd64"}/Docker.dmg`,
-    };
-  if (platform === "win32")
-    return {
-      name: "Docker Desktop Installer.exe",
-      url: `https://desktop.docker.com/win/main/${arch === "arm64" ? "arm64" : "amd64"}/Docker%20Desktop%20Installer.exe`,
-    };
-  if (
-    platform === "linux" &&
-    arch === "x64" &&
-    ["deb", "rpm"].includes(linuxFormat)
-  ) {
-    const name =
-      linuxFormat === "deb"
-        ? "docker-desktop-amd64.deb"
-        : "docker-desktop-x86_64.rpm";
-    return { name, url: `https://desktop.docker.com/linux/main/amd64/${name}` };
-  }
-  throw new Error(
-    "Install Docker Engine and Compose using your distribution's package manager",
-  );
+function nativeEnvironment() {
+  const env = {
+    ...process.env,
+    PYTHONNOUSERSITE: "1",
+    PYTHONUNBUFFERED: "1",
+    UV_NO_CONFIG: "1",
+    UV_SYSTEM_CERTS: "true",
+  };
+  delete env.PYTHONHOME;
+  delete env.PYTHONPATH;
+  return env;
 }
 class Backend {
-  constructor({ bundle, data, log = () => {} }) {
+  constructor({ bundle, data, log = () => {}, fetcher = fetch }) {
     this.bundle = bundle;
     this.data = data;
     this.log = log;
+    this.fetcher = fetcher;
+    this.runtime = path.join(data, "runtime");
+    this.python = path.join(
+      this.runtime,
+      "venv",
+      process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+    );
+    this.postgres = path.join(this.runtime, "postgres");
     this.active = false;
-    this.installer = null;
+    this.child = null;
+    this.connection = null;
     this.secrets = [];
   }
   async environment() {
-    await fs.mkdir(this.data, { recursive: true });
-    const incoming = path.join(this.data, "incoming");
-    await fs.mkdir(incoming, { recursive: true });
-    const file = path.join(this.data, ".env");
+    await fs.mkdir(this.data, { recursive: true, mode: 0o700 });
+    const file = path.join(this.data, "credentials.json");
     try {
-      await fs.access(file);
-    } catch {
       await fs.writeFile(
         file,
-        `POSTGRES_PASSWORD=${crypto.randomBytes(32).toString("hex")}\nAUTOSTACGIS_API_TOKEN=${crypto.randomBytes(32).toString("hex")}\nAUTOSTACGIS_PUBLIC_URL=http://127.0.0.1:8080\nAUTOSTACGIS_PORT=8080\nAUTOSTACGIS_INPUT_DIRECTORY=${JSON.stringify(incoming)}\n`,
+        JSON.stringify({
+          databasePassword: crypto.randomBytes(32).toString("hex"),
+          token: crypto.randomBytes(32).toString("hex"),
+        }),
         { mode: 0o600, flag: "wx" },
       );
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
     }
-    const text = await fs.readFile(file, "utf8");
-    const env = Object.fromEntries(
-      text
-        .trim()
-        .split("\n")
-        .map((line) => {
-          const index = line.indexOf("=");
-          const value = line.slice(index + 1);
-          return [
-            line.slice(0, index),
-            value.startsWith('"') ? JSON.parse(value) : value,
-          ];
-        }),
-    );
-    this.secrets = [env.POSTGRES_PASSWORD, env.AUTOSTACGIS_API_TOKEN].filter(
+    const credentials = JSON.parse(await fs.readFile(file, "utf8"));
+    this.secrets = [credentials.databasePassword, credentials.token].filter(
       Boolean,
     );
-    return { file, env };
+    return { file, credentials };
+  }
+  emit(chunk) {
+    let text = String(chunk);
+    for (const secret of this.secrets)
+      text = text.split(secret).join("[redacted]");
+    this.log(text);
   }
   async setInputDirectory(directory) {
-    if (
-      directory.includes("\n") ||
-      directory.includes("\r") ||
-      !(await fs.stat(directory)).isDirectory()
-    )
+    if (!(await fs.stat(directory)).isDirectory())
       throw new Error("Choose a valid input directory");
-    const { file, env } = await this.environment();
-    env.AUTOSTACGIS_INPUT_DIRECTORY = directory;
+    await this.environment();
     await fs.writeFile(
-      file,
-      Object.entries(env)
-        .map(
-          ([name, value]) =>
-            `${name}=${name === "AUTOSTACGIS_INPUT_DIRECTORY" ? JSON.stringify(value) : value}`,
-        )
-        .join("\n") + "\n",
+      path.join(this.data, "input-directory.json"),
+      JSON.stringify(directory),
       { mode: 0o600 },
     );
     return directory;
   }
-  async run(args, { allowFailure = false } = {}) {
-    if (this.active)
-      throw new Error("Another backend operation is already running");
+  async run(command, args, options = {}) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(command, args, {
+        shell: false,
+        windowsHide: true,
+        env: nativeEnvironment(),
+        ...options,
+      });
+      let output = "";
+      const emit = (chunk) => {
+        output = (output + chunk).slice(-12000);
+        this.emit(chunk);
+      };
+      child.stdout.on("data", emit);
+      child.stderr.on("data", emit);
+      child.once("error", reject);
+      child.once("close", (code) =>
+        code === 0
+          ? resolve(output)
+          : reject(
+              new Error(output || `${path.basename(command)} exited ${code}`),
+            ),
+      );
+    });
+  }
+  async fingerprint() {
+    const hash = crypto.createHash("sha256").update(JSON.stringify(manifest));
+    for (const name of (await fs.readdir(path.join(this.bundle, "wheels")))
+      .filter((name) => name.endsWith(".whl"))
+      .sort())
+      hash.update(await fs.readFile(path.join(this.bundle, "wheels", name)));
+    return hash.digest("hex");
+  }
+  async status() {
+    try {
+      const marker = JSON.parse(
+        await fs.readFile(path.join(this.runtime, "ready.json"), "utf8"),
+      );
+      await fs.access(this.python);
+      await fs.access(
+        path.join(
+          this.postgres,
+          "bin",
+          "postgres" + (process.platform === "win32" ? ".exe" : ""),
+        ),
+      );
+      const installed = marker.fingerprint === (await this.fingerprint());
+      return {
+        installed,
+        running: Boolean(this.child && this.child.exitCode === null),
+        ...(this.connection || {}),
+        message: installed
+          ? "Native PostgreSQL/PostGIS and Python are ready."
+          : "Download the updated embedded backend.",
+      };
+    } catch {
+      return {
+        installed: false,
+        running: false,
+        message:
+          "Download the embedded backend once to use it offline. No Docker or system Python is required.",
+      };
+    }
+  }
+  async archive(asset, destination) {
+    const cache = path.join(this.data, "downloads");
+    await fs.mkdir(cache, { recursive: true });
+    const archive = path.join(
+      cache,
+      path.basename(new URL(asset.url).pathname),
+    );
+    let valid = false;
+    try {
+      valid =
+        crypto
+          .createHash("sha256")
+          .update(await fs.readFile(archive))
+          .digest("hex") === asset.sha256;
+    } catch {}
+    if (!valid) {
+      this.emit("Downloading " + path.basename(archive) + "\n");
+      const response = await this.fetcher(asset.url);
+      if (!response.ok || !response.body)
+        throw new Error(`Download failed (${response.status})`);
+      const temporary = archive + "." + crypto.randomUUID() + ".download";
+      try {
+        await pipeline(
+          Readable.fromWeb(response.body),
+          require("node:fs").createWriteStream(temporary, { flags: "wx" }),
+        );
+        if (
+          crypto
+            .createHash("sha256")
+            .update(await fs.readFile(temporary))
+            .digest("hex") !== asset.sha256
+        )
+          throw new Error("Runtime checksum verification failed");
+        await fs.rename(temporary, archive);
+      } finally {
+        await fs.rm(temporary, { force: true });
+      }
+    }
+    await fs.mkdir(destination, { recursive: true });
+    return archive;
+  }
+  async download() {
+    if (this.active || this.child)
+      throw new Error("Stop the embedded backend before downloading an update");
     this.active = true;
     try {
-      const executable = await dockerExecutable();
-      return await new Promise((resolve, reject) => {
-        const child = spawn(executable, args, {
-          cwd: this.bundle,
-          shell: false,
-          windowsHide: true,
-        });
-        let output = "";
-        const emit = (chunk) => {
-          let text = chunk.toString();
-          for (const secret of this.secrets)
-            text = text.split(secret).join("[redacted]");
-          output = (output + text).slice(-60000);
-          this.log(text);
-        };
-        child.stdout.on("data", emit);
-        child.stderr.on("data", emit);
-        child.on("error", reject);
-        child.on("close", (code) =>
-          code === 0 || allowFailure
-            ? resolve(output)
-            : reject(new Error(output || `Docker exited ${code}`)),
-        );
-      });
+      const spec = runtimeSpec();
+      await this.environment();
+      const uvDirectory = path.join(this.runtime, "bootstrap");
+      const uvArchive = await this.archive(spec.uv, uvDirectory);
+      await this.run(process.platform === "win32" ? "tar.exe" : "tar", [
+        "-xf",
+        uvArchive,
+        "-C",
+        uvDirectory,
+      ]);
+      const uv = path.join(
+        uvDirectory,
+        spec.uvDirectory,
+        "uv" + (process.platform === "win32" ? ".exe" : ""),
+      );
+      const env = {
+        ...nativeEnvironment(),
+        UV_PYTHON_INSTALL_DIR: path.join(this.runtime, "python"),
+        UV_CACHE_DIR: path.join(this.runtime, "cache"),
+      };
+      await this.run(
+        uv,
+        [
+          "venv",
+          "--allow-existing",
+          "--python",
+          manifest.python,
+          "--managed-python",
+          path.join(this.runtime, "venv"),
+        ],
+        { env },
+      );
+      const pgArchive = await this.archive(spec.postgres, this.postgres);
+      await this.run(this.python, [
+        "-c",
+        "import sys,tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2],filter='data')",
+        pgArchive,
+        this.postgres,
+      ]);
+      const wheels = (await fs.readdir(path.join(this.bundle, "wheels")))
+        .filter((name) => name.endsWith(".whl"))
+        .map((name) => path.join(this.bundle, "wheels", name));
+      await this.run(
+        uv,
+        [
+          "pip",
+          "install",
+          "--python",
+          this.python,
+          "--reinstall-package",
+          "autostacgis",
+          "--reinstall-package",
+          "autostacgis-plugins",
+          "--reinstall-package",
+          "autostacgis-postgresql",
+          ...wheels,
+        ],
+        { env },
+      );
+      const extensions = await this.archive(spec.extensions, this.postgres);
+      await this.run(this.python, [
+        "-m",
+        "autostacgis_postgresql.install_extensions",
+        extensions,
+        this.postgres,
+      ]);
+      await fs.writeFile(
+        path.join(this.runtime, "ready.json"),
+        JSON.stringify({ fingerprint: await this.fingerprint() }),
+      );
+      this.emit(
+        "Embedded backend downloaded. It starts only when you choose Start and connect.\n",
+      );
+      return await this.status();
     } finally {
       this.active = false;
     }
   }
-  async compose(args) {
-    const { file } = await this.environment();
-    return this.run([
-      "compose",
-      "--project-name",
-      "autostacgis-desktop",
-      "--env-file",
-      file,
-      "--file",
-      path.join(this.bundle, "compose.yaml"),
-      ...args,
-    ]);
-  }
-  async status() {
-    try {
-      await this.run(["version", "--format", "{{.Server.Version}}"]);
-      const output = await this.compose(["ps", "--format", "json"]);
-      return {
-        installed: true,
-        running: output.includes("running"),
-        message: "Docker is ready. Backend startup is always explicit.",
-      };
-    } catch (error) {
-      return { installed: false, running: false, message: String(error) };
-    }
-  }
-  async download() {
-    await this.compose(["pull", "--ignore-buildable"]);
-    await this.compose(["build"]);
-  }
   async start() {
-    await this.compose(["up", "--build", "--detach", "--wait"]);
-    const { env } = await this.environment();
-    return {
-      installed: true,
-      running: true,
-      url: env.AUTOSTACGIS_PUBLIC_URL,
-      token: env.AUTOSTACGIS_API_TOKEN,
-    };
+    if (this.child && this.connection) return this.status();
+    if (this.active) throw new Error("A backend operation is already running");
+    this.active = true;
+    try {
+      if (!(await this.status()).installed)
+        throw new Error("Download the embedded backend first");
+      const { credentials } = await this.environment();
+      const child = spawn(
+        this.python,
+        [
+          "-m",
+          "autostacgis_postgresql.embedded",
+          "--postgres-root",
+          this.postgres,
+          "--directory",
+          path.join(this.data, "store"),
+        ],
+        {
+          shell: false,
+          windowsHide: true,
+          env: {
+            ...nativeEnvironment(),
+            AUTOSTACGIS_DATABASE_PASSWORD: credentials.databasePassword,
+            AUTOSTACGIS_API_TOKEN: credentials.token,
+          },
+        },
+      );
+      this.child = child;
+      child.stderr.on("data", (chunk) => this.emit(chunk));
+      const connection = await new Promise((resolve, reject) => {
+        let buffer = "";
+        const timer = setTimeout(
+          () =>
+            reject(
+              new Error("Embedded startup timed out; check the backend logs"),
+            ),
+          120000,
+        );
+        child.once("error", (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        child.once("exit", (code) => {
+          clearTimeout(timer);
+          this.child = null;
+          this.connection = null;
+          reject(
+            new Error(`Embedded backend exited (${code}); check its logs`),
+          );
+        });
+        child.stdout.on("data", (chunk) => {
+          buffer += chunk;
+          while (buffer.includes("\n")) {
+            const index = buffer.indexOf("\n"),
+              line = buffer.slice(0, index);
+            buffer = buffer.slice(index + 1);
+            if (line.startsWith("AUTOSTACGIS_READY:")) {
+              clearTimeout(timer);
+              resolve({
+                ...JSON.parse(line.slice("AUTOSTACGIS_READY:".length)),
+                token: credentials.token,
+              });
+            } else this.emit(line + "\n");
+          }
+        });
+      });
+      this.connection = connection;
+      return await this.status();
+    } catch (error) {
+      await this.stop();
+      throw error;
+    } finally {
+      this.active = false;
+    }
   }
   async stop() {
-    await this.compose(["down"]);
-  }
-  async downloadRuntime(destination, fetcher = fetch, linuxFormat = "deb") {
-    const { url } = runtimeDownload(
-      process.platform,
-      process.arch,
-      linuxFormat,
-    );
-    const response = await fetcher(url);
-    if (!response.ok || !response.body)
-      throw new Error("Runtime download failed: " + response.status);
-    await fs.mkdir(path.dirname(destination), { recursive: true });
-    const temp = destination + "." + crypto.randomUUID() + ".download";
-    try {
-      const stream = require("node:fs").createWriteStream(temp, {
-        flags: "wx",
+    const child = this.child;
+    if (!child) return;
+    await new Promise((resolve) => {
+      const timer = setTimeout(() => child.kill(), 60000);
+      child.once("close", () => {
+        clearTimeout(timer);
+        resolve();
       });
-      await pipeline(Readable.fromWeb(response.body), stream);
-      await fs.rename(temp, destination);
-      this.installer = destination;
-      this.log("Runtime installer downloaded. Open it to finish installation.");
-    } finally {
-      await fs.rm(temp, { force: true });
-    }
+      if (child.exitCode !== null) {
+        clearTimeout(timer);
+        resolve();
+        return;
+      }
+      child.stdin.on("error", () => {});
+      child.stdin.end("stop\n");
+    });
+    this.child = null;
+    this.connection = null;
+    this.emit("Embedded backend stopped. Database and results are retained.\n");
   }
 }
-module.exports = { Backend, runtimeDownload, dockerExecutable };
+module.exports = { Backend, runtimeSpec, nativeEnvironment };

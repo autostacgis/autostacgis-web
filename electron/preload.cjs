@@ -6,8 +6,6 @@ contextBridge.exposeInMainWorld("desktop", {
   download: () => ipcRenderer.invoke("backend:download"),
   start: () => ipcRenderer.invoke("backend:start"),
   stop: () => ipcRenderer.invoke("backend:stop"),
-  downloadRuntime: () => ipcRenderer.invoke("backend:download-runtime"),
-  openInstaller: () => ipcRenderer.invoke("backend:open-installer"),
   onLog: (callback) => {
     const listener = (_, message) => callback(String(message));
     ipcRenderer.on("backend:log", listener);

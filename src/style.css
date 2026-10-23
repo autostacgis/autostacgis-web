@@ -9,29 +9,74 @@ body {
     14px system-ui,
     sans-serif;
 }
-header {
-  height: 76px;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 12px 22px;
-  background: #101a21;
-  border-bottom: 1px solid #33434d;
+#root,
+.map {
+  width: 100vw;
+  height: 100vh;
 }
-.brand {
-  min-width: 178px;
+.workspace-brand strong {
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
 }
-.brand b {
+.workspace-brand small {
   display: block;
-  font-size: 21px;
-  letter-spacing: -0.6px;
+  font-size: 11px;
+  margin-top: 4px;
+  color: #a7d8c6;
 }
-.brand span {
-  color: #85bdad;
-  font-size: 12px;
+.workspace-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid #40535f;
+  padding: 0 12px 8px;
+  gap: 4px;
 }
-header label:first-of-type {
-  flex: 1;
+.workspace-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 2px 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.workspace-tab[aria-selected="true"] {
+  background: #285348;
+  color: #d7f5e7;
+}
+.workspace-tab:focus-visible {
+  outline: 2px solid #8bdbb9;
+}
+.workspace-tab .side-panel__tab {
+  margin: 0;
+  width: 100%;
+  border: 0;
+  pointer-events: none;
+}
+.workspace-tab span {
+  font-size: 10px;
+  margin-top: 4px;
+}
+.workspace-panel {
+  color: #e6edf0;
+}
+.workspace-panel .status {
+  margin: 0 0 14px;
+  padding: 8px 0;
+}
+.connection-mode {
+  border: 1px solid #40535f;
+  border-radius: 5px;
+  padding: 10px;
+  margin: 0 0 16px;
+}
+.connection-mode label {
+  padding: 5px 0;
+}
+input[type="radio"] {
+  display: inline;
+  width: auto;
+  margin: 0 8px 0 0;
 }
 label {
   display: block;
@@ -85,39 +130,6 @@ button:disabled {
 .active {
   border-color: #8bdbb9;
   background: #285348;
-}
-main {
-  position: relative;
-  height: calc(100vh - 76px);
-}
-.map {
-  width: 100%;
-  height: 100%;
-}
-aside {
-  position: absolute;
-  right: 16px;
-  top: 16px;
-  bottom: 16px;
-  width: 410px;
-  display: flex;
-  flex-direction: column;
-  background: #13232bf5;
-  border: 1px solid #40535f;
-  border-radius: 9px;
-  box-shadow: 0 12px 36px #0006;
-  z-index: 5;
-}
-nav {
-  display: flex;
-  gap: 4px;
-  padding: 10px;
-  border-bottom: 1px solid #40535f;
-}
-nav button {
-  font-size: 12px;
-  flex: 1;
-  padding: 8px 4px;
 }
 .status {
   font-size: 12px;
@@ -199,19 +211,4 @@ pre {
 }
 .import {
   font-size: 11px;
-}
-@media (max-width: 1000px) {
-  aside {
-    width: 345px;
-  }
-  header {
-    gap: 8px;
-    padding: 10px;
-  }
-  .brand {
-    min-width: 130px;
-  }
-  .brand b {
-    font-size: 18px;
-  }
 }

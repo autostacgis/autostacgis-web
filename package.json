@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Kepler.gl STAC workspace and optional bundled PostgreSQL backend",
-  "author": "AutoSTACGIS",
+  "author": "AutostacGIS",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "electron/main.cjs",
@@ -61,13 +61,14 @@
   },
   "build": {
     "appId": "org.autostacgis.desktop",
-    "productName": "AutoSTACGIS",
+    "productName": "AutostacGIS",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
       "electron/*.cjs",
+      "electron/*.json",
       "package.json",
       "!node_modules/**"
     ],
