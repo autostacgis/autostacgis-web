@@ -58,6 +58,8 @@ it("isolates the embedded interpreter from host Python configuration", () => {
   expect(env.PYTHONPATH).toBeUndefined();
   expect(env.PYTHONHOME).toBeUndefined();
   expect(env.PYTHONNOUSERSITE).toBe("1");
+  expect(env.PYTHONUTF8).toBe("1");
+  expect(env.PYTHONIOENCODING).toBe("utf-8");
 });
 it("verifies downloaded bytes before accepting a runtime or backend asset", async () => {
   const { createHash } = await import("node:crypto");

@@ -18,6 +18,8 @@ function nativeEnvironment() {
     ...process.env,
     PYTHONNOUSERSITE: "1",
     PYTHONUNBUFFERED: "1",
+    PYTHONUTF8: "1",
+    PYTHONIOENCODING: "utf-8",
     UV_NO_CONFIG: "1",
     UV_SYSTEM_CERTS: "true",
   };
