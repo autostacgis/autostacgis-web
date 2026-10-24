@@ -17,9 +17,9 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 try {
   if (!(await backend.status()).installed) await backend.download();
   let connection = await backend.start();
-  const request = async (route, body) => {
+  const request = async (route, body, method = body ? "POST" : "GET") => {
     const response = await fetch(connection.url + "/autostacgis/" + route, {
-      method: body ? "POST" : "GET",
+      method,
       headers: {
         Authorization: "Bearer " + connection.token,
         "Content-Type": "application/json",
@@ -30,11 +30,9 @@ try {
     return { response, value };
   };
   const configuration = {
-    catalog: {
-      version: "1.0.0",
-      plugins: ["metadata-value", "executor", "storage", "events"].map(
-        (use) => ({ use }),
-      ),
+    solver: { backward_chain: {} },
+    goal: {
+      "metadata-value": { jsonata: "item.properties.ready", value: true },
     },
     metadata_structure: {
       schemas: [],
@@ -50,13 +48,30 @@ try {
       },
       strict: true,
     },
-    request: {
-      goal: {
-        plugin: "metadata-value",
-        settings: { jsonata: "item.properties.ready", value: true },
-      },
-    },
   };
+  let published = await request("workflows/available");
+  assert.equal(published.response.status, 200, JSON.stringify(published.value));
+  assert(published.value.workflows.some((row) => row.id === "metadata-value"));
+  published = await request("workflows/published/metadata-value");
+  assert.equal(published.response.status, 200, JSON.stringify(published.value));
+  const workflowName = "smoke-workflow-" + crypto.randomUUID();
+  let saved = await request("workflows", {
+    name: workflowName,
+    document: published.value.document,
+  });
+  assert.equal(saved.response.status, 201, JSON.stringify(saved.value));
+  saved = await request(
+    "workflows/" + workflowName,
+    { name: workflowName + " renamed" },
+    "PATCH",
+  );
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.value));
+  const savedPath =
+    "workflows/" + encodeURIComponent(workflowName + " renamed");
+  saved = await request(savedPath, configuration, "PUT");
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.value));
+  saved = await request(savedPath, undefined, "DELETE");
+  assert.equal(saved.response.status, 200);
   const generated = await backend.run(backend.python, [
     "-c",
     `
@@ -93,7 +108,7 @@ print("STAC_INPUT:"+json.dumps(record.item))
   assert.equal(result.response.status, 422);
   assert.match(result.value.detail, /Undeclared metadata field/);
   const source =
-    'ID = "registry-smoke-check"\nVERSION = "1.1.0"\nCAPABILITY = "checks"\nREQUIRES = []\nDEPENDENCIES = ["packaging>=24,<27"]\nclass Check:\n    def __call__(self, *args): return True\nIMPLEMENTATION = Check\n';
+    '"""Verify a record condition in the installed plugin smoke test."""\nID = "registry-smoke-check"\nVERSION = "1.1.0"\nCAPABILITY = "checks"\nREQUIRES = []\nDEPENDENCIES = ["packaging>=24,<27"]\nclass Check:\n    def __call__(self, *args): return True\nIMPLEMENTATION = Check\n';
   result = await request("plugins/install-file", {
     filename: "registry_smoke_check.py",
     source,

@@ -35,7 +35,7 @@ Check out `autostacgis-python`, `autostacgis-plugins`, and `autostacgis-postgres
 
 ## Package
 
-`npm run dist` creates the installer for the current platform. GitHub Actions builds macOS DMG/ZIP, Windows NSIS, and Linux AppImage/DEB with the backend included. Local macOS builds use an ad-hoc signature. Distribution signing/notarization uses the normal electron-builder environment credentials (`CSC_LINK`/`CSC_NAME`); private keys are not configured in source. Browser production assets are in `dist/` and can be hosted separately; the STAC service's CORS origins must include that origin.
+`npm run dist` creates the installer for the current platform. GitHub Actions builds macOS DMG/ZIP, Windows NSIS, and Linux AppImage with the backend included. Local macOS builds use an ad-hoc signature. Distribution signing/notarization uses the normal electron-builder environment credentials (`CSC_LINK`/`CSC_NAME`); private keys are not configured in source. Browser production assets are in `dist/` and can be hosted separately; the STAC service's CORS origins must include that origin.
 
 Renderer Node integration is disabled, context isolation and sandboxing are enabled, and preload exposes only fixed backend operations. The renderer cannot supply shell commands; input-folder selection uses the native chooser. Backend credentials are generated in the app's user-data directory and redacted from operation logs. Catalog text is rendered through React, not injected HTML.
 
