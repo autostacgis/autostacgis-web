@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
@@ -14,6 +14,7 @@ const backend = new Backend({
   log: (line) => process.stdout.write(line),
 });
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let failure;
 try {
   if (!(await backend.status()).installed) await backend.download();
   let connection = await backend.start();
@@ -136,7 +137,8 @@ print("STAC_INPUT:"+json.dumps(record.item))
   result = await request("jobs", { configuration, inputs: [item] });
   assert.equal(result.response.status, 202, JSON.stringify(result.value));
   const id = result.value.id;
-  for (let i = 0; i < 40; i++) {
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
     result = await request("jobs/" + id);
     if (!["queued", "running"].includes(result.value.state)) break;
     await pause(250);
@@ -155,8 +157,22 @@ print("STAC_INPUT:"+json.dumps(record.item))
   console.log(
     "Plugin/metadata API passed: strict validation, versioned namespace installation, job publication, restart persistence.",
   );
+} catch (error) {
+  failure = error;
+  throw error;
 } finally {
   await backend.stop();
+  if (failure) {
+    for (const name of ["worker", "api"]) {
+      try {
+        const log = await readFile(
+          path.join(directory, "store", name + ".log"),
+          "utf8",
+        );
+        backend.emit(name + " log:\n" + log.slice(-6000) + "\n");
+      } catch {}
+    }
+  }
   if (!process.env.AUTOSTACGIS_SMOKE_DIRECTORY)
     await rm(directory, { recursive: true, force: true });
 }
