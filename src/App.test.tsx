@@ -69,13 +69,8 @@ const descriptor = {
     },
   ],
   default_configuration: {
-    catalog: {
-      version: "1.0.0",
-      plugins: [
-        { use: "metadata-value", settings: { jsonata: "true", value: true } },
-      ],
-    },
-    request: { goal: { output: {} } },
+    solver: { backward_chain: {} },
+    goal: { "metadata-value": { jsonata: "true", value: true } },
   },
 };
 beforeEach(() => {
@@ -112,6 +107,8 @@ it("never starts or checks the bundled backend when opening the application", as
   expect(desktop.status).not.toHaveBeenCalled();
   expect(desktop.download).not.toHaveBeenCalled();
   const user = userEvent.setup();
+  expect(screen.queryByTestId("kepler-map")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Skip for now" }));
   await user.click(screen.getByRole("tab", { name: "Settings" }));
   expect(desktop.status).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Check status" }));
@@ -134,15 +131,19 @@ it("connects, searches, selects an Item, and submits a plan with named dependenc
       calls.push([String(url), options]);
       const path = new URL(url).pathname;
       const value =
-        path === "/collections"
-          ? { collections: [{ id: "scenes" }] }
-          : path === "/autostacgis/plugins"
-            ? descriptor
-            : path === "/search"
-              ? { type: "FeatureCollection", features: [item], links: [] }
-              : path === "/autostacgis/plan"
-                ? { steps: [] }
-                : { id: "catalog" };
+        path === "/autostacgis/workflows"
+          ? []
+          : path === "/autostacgis/workflows/available"
+            ? { format_version: 1, workflows: [] }
+            : path === "/collections"
+              ? { collections: [{ id: "scenes" }] }
+              : path === "/autostacgis/plugins"
+                ? descriptor
+                : path === "/search"
+                  ? { type: "FeatureCollection", features: [item], links: [] }
+                  : path === "/autostacgis/plan"
+                    ? { steps: [] }
+                    : { id: "catalog" };
       return new Response(JSON.stringify(value), { status: 200 });
     }),
   );
@@ -150,7 +151,7 @@ it("connects, searches, selects an Item, and submits a plan with named dependenc
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Connect" }));
   await waitFor(() =>
-    expect(screen.getByRole("status").textContent).toContain(
+    expect(screen.getAllByText(/plugins available/)[0].textContent).toContain(
       "plugins available",
     ),
   );
@@ -167,12 +168,13 @@ it("connects, searches, selects an Item, and submits a plan with named dependenc
     calls.find(([url]) => url.endsWith("/autostacgis/plan"))[1].body,
   );
   expect(body.inputs).toEqual([item]);
-  expect(
-    body.configuration.catalog.plugins.map((entry: any) => entry.use),
-  ).toEqual(["backward_chain", "metadata-value"]);
+  expect(body.configuration.solver).toEqual({ backward_chain: {} });
+  expect(body.configuration.goal).toEqual({
+    "metadata-value": { jsonata: "true", value: true },
+  });
   await user.click(screen.getByRole("tab", { name: "Plugins" }));
   for (const capability of descriptor.capabilities)
-    expect(screen.getByRole("tab", { name: capability })).toBeTruthy();
+    expect(screen.getByRole("option", { name: capability })).toBeTruthy();
 });
 
 it("keeps remote connection fields in Settings and starts the embedded service only on request", async () => {
@@ -209,23 +211,24 @@ it("keeps remote connection fields in Settings and starts the embedded service o
   const user = userEvent.setup();
   expect(screen.queryByLabelText("API URL")).toBeNull();
   expect(desktop.start).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("radio", { name: "Remote API" }));
+  await user.selectOptions(screen.getByLabelText("Connect to"), "remote");
   await user.clear(screen.getByLabelText("API URL"));
   await user.type(
     screen.getByLabelText("API URL"),
     "https://remote.example/stac",
   );
+  await user.click(screen.getByRole("button", { name: "Skip for now" }));
   await user.click(screen.getByRole("tab", { name: "Catalog" }));
   expect(screen.queryByLabelText("API URL")).toBeNull();
   await user.click(screen.getByRole("tab", { name: "Settings" }));
   expect((screen.getByLabelText("API URL") as HTMLInputElement).value).toBe(
     "https://remote.example/stac",
   );
-  await user.click(screen.getByRole("radio", { name: "Embedded backend" }));
+  await user.selectOptions(screen.getByLabelText("Connect to"), "embedded");
   await user.click(screen.getByRole("button", { name: "Start and connect" }));
   await waitFor(() => expect(desktop.start).toHaveBeenCalledTimes(1));
   await waitFor(() =>
-    expect(screen.getByRole("status").textContent).toContain(
+    expect(screen.getAllByText(/plugins available/)[0].textContent).toContain(
       "plugins available",
     ),
   );

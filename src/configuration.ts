@@ -5,12 +5,24 @@ export function buildConfiguration(
   settings: Record<string, string>,
   plugins: Plugin[],
 ) {
-  const definitions = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+  const result = structuredClone(document),
+    definitions = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+  for (const capability of new Set(
+    plugins.map((plugin) => plugin.capability),
+  )) {
+    for (const name of Object.keys(document[capability] || {})) {
+      if (definitions.get(name)?.capability !== capability)
+        throw new Error(`Unavailable ${capability} plugin ${name}`);
+    }
+  }
+  for (const plugin of plugins) delete result[plugin.capability];
+  delete result.catalog;
+  delete result.request;
   const enabled = new Set(selected),
     pending = [...selected];
   while (pending.length) {
-    const name = pending.pop()!;
-    const plugin = definitions.get(name);
+    const name = pending.pop()!,
+      plugin = definitions.get(name);
     if (!plugin) throw new Error(`Unavailable plugin ${name}`);
     for (const dependency of plugin.requires) {
       if (!enabled.has(dependency)) {
@@ -22,19 +34,14 @@ export function buildConfiguration(
   const solvers = [...enabled].filter(
     (name) => definitions.get(name)?.capability === "solver",
   );
-  if (solvers.length > 1)
-    throw new Error(`Only one solver may be active: ${solvers.join(", ")}`);
-  const catalog = {
-    ...document.catalog,
-    version: "1.0.0",
-    plugins: [...enabled].sort().map((name) => ({
-      use: name,
-      settings: JSON.parse(
-        settings[name] || JSON.stringify(definitions.get(name)?.defaults || {}),
-      ),
-    })),
-  };
-  if (solvers.length) catalog.solver = { plugin: solvers[0] };
-  else delete catalog.solver;
-  return { ...document, catalog };
+  if (solvers.length > 1) throw new Error("Only one solver may be active");
+  for (const name of selected) {
+    const plugin = definitions.get(name);
+    if (!plugin) throw new Error(`Unavailable plugin ${name}`);
+    (result[plugin.capability] ||= {})[name] = JSON.parse(
+      settings[name] || JSON.stringify(plugin.defaults || {}),
+    );
+  }
+  if (solvers.length && !result.solver) result.solver = { [solvers[0]]: {} };
+  return result;
 }

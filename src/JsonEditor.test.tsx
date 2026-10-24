@@ -29,14 +29,53 @@ it("preserves JSON types and array structure across GUI edits", () => {
 });
 it("retains an invalid text draft until corrected and returns to the GUI", () => {
   render(<Document />);
-  fireEvent.click(screen.getByRole("button", { name: "Text" }));
+  fireEvent.change(screen.getByLabelText("Document editing mode"), {
+    target: { value: "text" },
+  });
   const text = screen.getByLabelText("Document");
   fireEvent.change(text, { target: { value: '{"broken":' } });
   expect(screen.getByRole("alert").textContent).toContain("Invalid JSON");
   expect((text as HTMLTextAreaElement).value).toBe('{"broken":');
   fireEvent.change(text, { target: { value: '{"fixed":true}' } });
-  fireEvent.click(screen.getByRole("button", { name: "GUI" }));
+  fireEvent.change(screen.getByLabelText("Document editing mode"), {
+    target: { value: "gui" },
+  });
   expect(
     (screen.getByLabelText("$.fixed value") as HTMLInputElement).checked,
   ).toBe(true);
+});
+
+it("offers declared optional parameters with their defaults and descriptions", () => {
+  function Form() {
+    const [value, setValue] = useState("{}");
+    return (
+      <>
+        <JsonEditor
+          label="Parameters"
+          value={value}
+          onChange={setValue}
+          schema={{
+            type: "object",
+            properties: {
+              workers: {
+                type: "integer",
+                default: 4,
+                description: "Shared workers",
+              },
+            },
+            additionalProperties: false,
+          }}
+        />
+        <output>{value}</output>
+      </>
+    );
+  }
+  render(<Form />);
+  fireEvent.change(screen.getByLabelText("$ available parameters"), {
+    target: { value: "workers" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add parameter" }));
+  expect(JSON.parse(screen.getByRole("status").textContent!).workers).toBe(4);
+  expect(screen.getByText("Shared workers")).toBeTruthy();
+  expect(screen.queryByPlaceholderText("New field name")).toBeNull();
 });

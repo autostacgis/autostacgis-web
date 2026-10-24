@@ -26,17 +26,12 @@ it("adds shared named dependencies once and keeps arbitrary settings unchanged",
     { process: '{"upstream_option":{"nested":42}}' },
     plugins,
   );
-  expect(value.catalog.plugins.map((entry: any) => entry.use)).toEqual([
-    "backward_chain",
-    "gather-all",
-    "goal",
-    "process",
-  ]);
-  expect(
-    value.catalog.plugins.find((entry: any) => entry.use === "process")
-      .settings,
-  ).toEqual({ upstream_option: { nested: 42 } });
-  expect(value.catalog.solver.plugin).toBe("backward_chain");
+  expect(value).toEqual({
+    goal: { goal: {} },
+    process: { process: { upstream_option: { nested: 42 } } },
+    solver: { backward_chain: {} },
+  });
+  expect(value.sequence).toBeUndefined(); // Shared dependencies are resolved by Python.
 });
 it("rejects incompatible solver dependencies", () => {
   expect(() =>

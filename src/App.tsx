@@ -1,6 +1,9 @@
+import { Toaster, toast } from "sonner";
+import WorkflowLibrary from "./WorkflowLibrary";
 import { useEffect, useState } from "react";
 import {
   WorkspaceContext,
+  ConnectionContext,
   WorkspaceLayout,
   selectWorkspacePanel,
   type WorkspaceTab,
@@ -14,8 +17,8 @@ import { Api, assetHref, nextPage, resolveItem } from "./api";
 import { buildConfiguration } from "./configuration";
 import type { BackendStatus, Descriptor, Job, Json } from "./types";
 const empty = {
-  catalog: { version: "1.0.0", plugins: [] },
-  request: { goal: { output: {} } },
+  solver: { backward_chain: {} },
+  goal: { "metadata-value": { path: "properties.ready", value: true } },
 };
 export default function App() {
   const [url, setUrl] = useState(
@@ -30,21 +33,25 @@ export default function App() {
       ? "embedded"
       : "remote",
   );
-  const [status, setStatus] = useState(
-    "Connect to a STAC API, or start the bundled backend when you need it.",
+  const setStatus = (message: string) => {
+    toast.message(message);
+  };
+  const [setup, setSetup] = useState(
+    !window.localStorage.getItem("connection-setup-complete"),
   );
+  const [activeWorkflow, setActiveWorkflow] = useState<string | null>(null);
+  const finishSetup = () => {
+    window.localStorage.setItem("connection-setup-complete", "true");
+    setSetup(false);
+  };
   const [busy, setBusy] = useState(false);
   const [descriptor, setDescriptor] = useState<Descriptor | null>(null);
   const [capability, setCapability] = useState("process");
-  const [document, setDocument] = useState<Json>(empty);
+  const [, setDocument] = useState<Json>(empty);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [settings, setSettings] = useState<Record<string, string>>({});
-  const [request, setRequest] = useState(
-    JSON.stringify(empty.request, null, 2),
-  );
-  const [structure, setStructure] = useState(
-    '{"schemas":[],"inline":{},"strict":true}',
-  );
+  const [request, setRequest] = useState(JSON.stringify(empty, null, 2));
+  const [structure, setStructure] = useState("{}");
   const [query, setQuery] = useState('{"limit":50}');
   const [items, setItems] = useState<Json[]>([]);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
@@ -52,7 +59,7 @@ export default function App() {
   const [output, setOutput] = useState<Json>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [configName, setConfigName] = useState("default");
-  const [configurations, setConfigurations] = useState<Json[]>([]);
+
   const [backend, setBackend] = useState<BackendStatus>({
     installed: false,
     running: false,
@@ -70,42 +77,41 @@ export default function App() {
   );
   const perform = async (operation: () => Promise<void>) => {
     setBusy(true);
+    const notification = toast.loading("Working…");
     try {
       await operation();
     } catch (error) {
-      setStatus(String(error));
+      toast.error(String(error));
     } finally {
+      toast.dismiss(notification);
       setBusy(false);
     }
   };
   function loadConfiguration(value: Json, plugins = descriptor?.plugins || []) {
     setDocument(value);
-    setStructure(
-      JSON.stringify(
-        value.metadata_structure || { schemas: [], inline: {}, strict: true },
-        null,
-        2,
-      ),
-    );
-    setRequest(JSON.stringify(value.request, null, 2));
-    setSelected(
-      new Set(value.catalog?.plugins.map((plugin: Json) => plugin.use) || []),
-    );
-    const configured = new globalThis.Map(
-      (value.catalog?.plugins || []).map((plugin: Json) => [
-        plugin.use,
-        plugin.settings || {},
-      ]),
-    );
+    setStructure(JSON.stringify(value.metadata_structure || {}, null, 2));
+    setRequest(JSON.stringify(value, null, 2));
+    const configured = new globalThis.Map<string, Json>();
+    for (const plugin of plugins)
+      if (Object.hasOwn(value[plugin.capability] || {}, plugin.id))
+        configured.set(plugin.id, value[plugin.capability][plugin.id]);
+    setSelected(new Set(configured.keys()));
     setSettings(
       Object.fromEntries(
         plugins.map((plugin) => [
           plugin.id,
-          JSON.stringify(configured.get(plugin.id) || plugin.defaults, null, 2),
+          JSON.stringify(
+            configured.has(plugin.id)
+              ? configured.get(plugin.id)
+              : plugin.defaults,
+            null,
+            2,
+          ),
         ]),
       ),
     );
   }
+
   async function connect(
     target = url,
     bearer = token,
@@ -118,22 +124,23 @@ export default function App() {
     setItems([]);
     setChosen(new Set());
     setNext(null);
+    setJobs([]);
+    setOutput(null);
+    setActiveWorkflow(null);
     if (persistRemote) window.localStorage.setItem("api-url", client.root);
     const catalog = await client.request("collections");
     setCollections(catalog.collections.map((value: Json) => value.id));
     try {
       const value: Descriptor = await client.request("autostacgis/plugins");
       const configuration = structuredClone(value.default_configuration);
-      const source = configuration.catalog.plugins.find(
-        (value: Json) => value.use === "stac-source",
-      );
-      if (source) source.settings = { api_url: client.root };
       setDescriptor(value);
       loadConfiguration(configuration, value.plugins);
       setStatus(
         `${landing.title || landing.id}: ${value.plugins.length} plugins available.`,
       );
+      finishSetup();
     } catch (error) {
+      finishSetup();
       setStatus(
         `Connected to STAC. AutostacGIS controls unavailable: ${error}`,
       );
@@ -147,16 +154,40 @@ export default function App() {
   }
   function config() {
     if (!descriptor) throw new Error("Connect to an AutostacGIS backend");
-    return buildConfiguration(
-      {
-        ...document,
-        request: JSON.parse(request),
-        metadata_structure: JSON.parse(structure),
-      },
+    const value = buildConfiguration(
+      JSON.parse(request),
       selected,
       settings,
       descriptor.plugins,
     );
+    const metadata = JSON.parse(structure);
+    if (Object.keys(metadata).length) value.metadata_structure = metadata;
+    else delete value.metadata_structure;
+    return value;
+  }
+  function editSettings(name: string, value: string) {
+    const updated = { ...settings, [name]: value };
+    setSettings(updated);
+    try {
+      const workflow = buildConfiguration(
+        JSON.parse(request),
+        selected,
+        updated,
+        descriptor!.plugins,
+      );
+      setDocument(workflow);
+      setRequest(JSON.stringify(workflow, null, 2));
+    } catch {
+      /* Keep incomplete JSON editable. */
+    }
+  }
+  function editWorkflow(value: string) {
+    setRequest(value);
+    try {
+      loadConfiguration(JSON.parse(value));
+    } catch {
+      /* Preserve incomplete text. */
+    }
   }
   async function invoke(operation: string, trigger?: string) {
     if (!api) throw new Error("Connect first");
@@ -176,14 +207,32 @@ export default function App() {
     const next = new Set(selected);
     if (enabled) {
       if (
-        descriptor?.plugins.find((plugin) => plugin.id === name)?.capability ===
-        "solver"
+        descriptor?.plugins.find((plugin) => plugin.id === name)?.capability &&
+        ["solver", "trigger"].includes(
+          descriptor!.plugins.find((plugin) => plugin.id === name)!.capability,
+        )
       )
         for (const plugin of descriptor?.plugins || [])
-          if (plugin.capability === "solver") next.delete(plugin.id);
+          if (
+            plugin.capability ===
+            descriptor!.plugins.find((plugin) => plugin.id === name)!.capability
+          )
+            next.delete(plugin.id);
       next.add(name);
     } else next.delete(name);
     setSelected(next);
+    try {
+      const value = buildConfiguration(
+        JSON.parse(request),
+        next,
+        settings,
+        descriptor!.plugins,
+      );
+      setDocument(value);
+      setRequest(JSON.stringify(value, null, 2));
+    } catch (error) {
+      toast.error(String(error));
+    }
   }
   async function openAsset(
     asset: Json,
@@ -225,11 +274,179 @@ export default function App() {
       );
     }
   }
+  const connectionSettings = (
+    <>
+      <h2>Connection settings</h2>
+      <label>
+        Connect to
+        <select
+          aria-label="Connect to"
+          value={connectionMode}
+          onChange={(event) => {
+            const mode = event.target.value as "embedded" | "remote";
+            setConnectionMode(mode);
+            window.localStorage.setItem("connection-mode", mode);
+            setApi(null);
+            setDescriptor(null);
+            setItems([]);
+            setChosen(new Set());
+          }}
+        >
+          <option value="embedded" disabled={!window.desktop}>
+            Embedded backend
+          </option>
+          <option value="remote">Remote API</option>
+        </select>
+      </label>
+      {connectionMode === "remote" && (
+        <div className="connection-fields">
+          {" "}
+          <label>
+            API URL
+            <input
+              aria-label="API URL"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+            />
+          </label>
+          <label>
+            Token
+            <input
+              aria-label="API token"
+              type="password"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+            />
+          </label>
+          <button disabled={busy} onClick={() => perform(() => connect())}>
+            Connect
+          </button>
+        </div>
+      )}
+      {connectionMode === "embedded" && (
+        <>
+          <h3>Embedded backend</h3>
+
+          {window.desktop ? (
+            <>
+              <div className="row">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    perform(async () =>
+                      setBackend(await window.desktop!.status()),
+                    )
+                  }
+                >
+                  Check status
+                </button>
+              </div>
+              <p>{backend.message}</p>
+              {backend.running && backend.url && (
+                <details>
+                  <summary>Connection details for other clients</summary>
+                  <label>
+                    API URL
+                    <input
+                      aria-label="Embedded API URL"
+                      readOnly
+                      value={backend.url}
+                    />
+                  </label>
+                  <label>
+                    API token
+                    <input
+                      aria-label="Embedded API token"
+                      readOnly
+                      type={showEmbeddedToken ? "text" : "password"}
+                      value={backend.token || ""}
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={showEmbeddedToken}
+                      onChange={(event) =>
+                        setShowEmbeddedToken(event.target.checked)
+                      }
+                    />
+                    Show embedded API token
+                  </label>
+                </details>
+              )}
+              <button
+                disabled={busy}
+                onClick={() =>
+                  perform(async () => {
+                    const directory =
+                      await window.desktop!.chooseInputDirectory();
+                    if (directory)
+                      setStatus(
+                        "Input folder selected. Use this path in local file providers and watchdog settings: " +
+                          directory,
+                      );
+                  })
+                }
+              >
+                Choose input folder
+              </button>
+              <div className="row">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    perform(async () => {
+                      setBackend(await window.desktop!.download());
+                      setStatus(
+                        "Embedded backend downloaded. Choose Start and connect when ready.",
+                      );
+                    })
+                  }
+                >
+                  Download embedded backend
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    perform(async () => {
+                      const value = await window.desktop!.start();
+                      setBackend(value);
+                      await connect(value.url!, value.token!, false);
+                    })
+                  }
+                >
+                  Start and connect
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    perform(async () => {
+                      await window.desktop!.stop();
+                      setBackend({ ...backend, running: false });
+                      setApi(null);
+                      setDescriptor(null);
+                      setStatus(
+                        "Embedded backend stopped. Your data is retained.",
+                      );
+                    })
+                  }
+                >
+                  Stop embedded backend
+                </button>
+              </div>
+              {logs && <pre aria-label="Backend log">{logs}</pre>}
+            </>
+          ) : (
+            <p>
+              Use the Electron build for local backend controls. The browser app
+              connects to any deployed API.
+            </p>
+          )}
+        </>
+      )}
+    </>
+  );
   const renderPanel = (tab: WorkspaceTab) => (
     <div className="workspace-panel">
-      <p className="status" role="status">
-        {status}
-      </p>
       <section>
         {tab === "Catalog" && (
           <>
@@ -386,9 +603,7 @@ export default function App() {
                 selected={selected}
                 settings={settings}
                 onSelect={selectPlugin}
-                onSettings={(name, value) =>
-                  setSettings({ ...settings, [name]: value })
-                }
+                onSettings={editSettings}
                 capability={capability}
                 onCapability={setCapability}
                 onStart={(name) => perform(() => invoke("jobs", name))}
@@ -399,22 +614,20 @@ export default function App() {
           ))}
         {tab === "Workflow" && (
           <>
-            <h2>Build a workflow</h2>
-            <label>
-              Configuration name
-              <input
-                value={configName}
-                onChange={(event) => setConfigName(event.target.value)}
+            {api && (
+              <WorkflowLibrary
+                api={api}
+                document={config}
+                activate={loadConfiguration}
+                active={activeWorkflow}
+                setActive={setActiveWorkflow}
               />
-            </label>
-            <label>
-              Request / goal
-              <JsonEditor
-                label="Request"
-                value={request}
-                onChange={setRequest}
-              />
-            </label>
+            )}
+            <JsonEditor
+              label="Workflow"
+              value={request}
+              onChange={editWorkflow}
+            />
             <p>
               {chosen.size
                 ? `${chosen.size} selected STAC Items will be used as inputs.`
@@ -432,34 +645,6 @@ export default function App() {
               ))}
             </div>
             <div className="row">
-              <button
-                disabled={!descriptor || busy}
-                onClick={() =>
-                  perform(async () => {
-                    await api!.request(
-                      "autostacgis/configurations/" +
-                        encodeURIComponent(configName),
-                      "PUT",
-                      config(),
-                    );
-                    setStatus("Configuration saved");
-                  })
-                }
-              >
-                Save
-              </button>
-              <button
-                disabled={!descriptor || busy}
-                onClick={() =>
-                  perform(async () =>
-                    setConfigurations(
-                      await api!.request("autostacgis/configurations"),
-                    ),
-                  )
-                }
-              >
-                Load list
-              </button>
               <button
                 disabled={!descriptor}
                 onClick={() =>
@@ -485,24 +670,16 @@ export default function App() {
                   onChange={(event) =>
                     perform(async () => {
                       const file = event.target.files?.[0];
-                      if (file)
+                      if (file) {
                         loadConfiguration(JSON.parse(await file.text()));
+                        setActiveWorkflow(null);
+                        setConfigName(file.name.replace(/\.json$/, ""));
+                      }
                     })
                   }
                 />
               </label>
             </div>
-            {configurations.map((row) => (
-              <button
-                key={row.id}
-                onClick={() => {
-                  loadConfiguration(row.document);
-                  setConfigName(row.id);
-                }}
-              >
-                {row.id}
-              </button>
-            ))}
             {output && (
               <JsonEditor
                 label="Result"
@@ -571,194 +748,40 @@ export default function App() {
         {tab === "Settings" && (
           <>
             <UpdateSettings />
-            <h2>Connection settings</h2>
-            <fieldset className="connection-mode">
-              <legend>Connect to</legend>
-              {(["embedded", "remote"] as const).map((mode) => (
-                <label key={mode}>
-                  <input
-                    type="radio"
-                    name="connection-mode"
-                    checked={connectionMode === mode}
-                    disabled={mode === "embedded" && !window.desktop}
-                    onChange={() => {
-                      setConnectionMode(mode);
-                      window.localStorage.setItem("connection-mode", mode);
-                      setApi(null);
-                      setDescriptor(null);
-                      setItems([]);
-                      setChosen(new Set());
-                      setStatus("Choose a connection below.");
-                    }}
-                  />
-                  {mode === "embedded" ? "Embedded backend" : "Remote API"}
-                </label>
-              ))}
-            </fieldset>
-            {connectionMode === "remote" && (
-              <div className="connection-fields">
-                {" "}
-                <label>
-                  API URL
-                  <input
-                    aria-label="API URL"
-                    value={url}
-                    onChange={(event) => setUrl(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Token
-                  <input
-                    aria-label="API token"
-                    type="password"
-                    value={token}
-                    onChange={(event) => setToken(event.target.value)}
-                  />
-                </label>
-                <button
-                  disabled={busy}
-                  onClick={() => perform(() => connect())}
-                >
-                  Connect
-                </button>
-              </div>
-            )}
-            {connectionMode === "embedded" && (
-              <>
-                <h3>Embedded backend</h3>
-                <p>
-                  Download and start a private PostgreSQL/PostGIS service on
-                  this computer. Nothing starts when the app opens. Data stays
-                  here between sessions.
-                </p>
-                {window.desktop ? (
-                  <>
-                    <div className="row">
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(async () =>
-                            setBackend(await window.desktop!.status()),
-                          )
-                        }
-                      >
-                        Check status
-                      </button>
-                    </div>
-                    <p>{backend.message}</p>
-                    {backend.running && backend.url && (
-                      <details>
-                        <summary>Connection details for other clients</summary>
-                        <label>
-                          API URL
-                          <input
-                            aria-label="Embedded API URL"
-                            readOnly
-                            value={backend.url}
-                          />
-                        </label>
-                        <label>
-                          API token
-                          <input
-                            aria-label="Embedded API token"
-                            readOnly
-                            type={showEmbeddedToken ? "text" : "password"}
-                            value={backend.token || ""}
-                          />
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={showEmbeddedToken}
-                            onChange={(event) =>
-                              setShowEmbeddedToken(event.target.checked)
-                            }
-                          />
-                          Show embedded API token
-                        </label>
-                      </details>
-                    )}
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        perform(async () => {
-                          const directory =
-                            await window.desktop!.chooseInputDirectory();
-                          if (directory)
-                            setStatus(
-                              "Input folder selected. Use this path in local file providers and watchdog settings: " +
-                                directory,
-                            );
-                        })
-                      }
-                    >
-                      Choose input folder
-                    </button>
-                    <div className="row">
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(async () => {
-                            setBackend(await window.desktop!.download());
-                            setStatus(
-                              "Embedded backend downloaded. Choose Start and connect when ready.",
-                            );
-                          })
-                        }
-                      >
-                        Download embedded backend
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(async () => {
-                            const value = await window.desktop!.start();
-                            setBackend(value);
-                            await connect(value.url!, value.token!, false);
-                          })
-                        }
-                      >
-                        Start and connect
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(async () => {
-                            await window.desktop!.stop();
-                            setBackend({ ...backend, running: false });
-                            setApi(null);
-                            setDescriptor(null);
-                            setStatus(
-                              "Embedded backend stopped. Your data is retained.",
-                            );
-                          })
-                        }
-                      >
-                        Stop embedded backend
-                      </button>
-                    </div>
-                    <pre aria-label="Backend log">
-                      {logs || "Backend controls are idle."}
-                    </pre>
-                  </>
-                ) : (
-                  <p>
-                    Use the Electron build for local backend controls. The
-                    browser app connects to any deployed API.
-                  </p>
-                )}
-              </>
-            )}
+            {connectionSettings}
           </>
         )}
       </section>
     </div>
   );
+  if (setup)
+    return (
+      <>
+        <Toaster position="top-center" theme="dark" richColors closeButton />
+        <main className="connection-screen">
+          <div className="connection-card">
+            <img src="/icon.svg" alt="" />
+            <h1>AutostacGIS</h1>
+            {connectionSettings}
+            <button disabled={busy} onClick={finishSetup}>
+              Skip for now
+            </button>
+          </div>
+        </main>
+      </>
+    );
   return (
-    <WorkspaceLayout>
-      <WorkspaceContext.Provider value={renderPanel}>
-        <Map />
-      </WorkspaceContext.Provider>
-    </WorkspaceLayout>
+    <>
+      <Toaster position="top-center" theme="dark" richColors closeButton />
+      <ConnectionContext.Provider
+        value={{ catalog: !!api, backend: !!descriptor }}
+      >
+        <WorkspaceLayout>
+          <WorkspaceContext.Provider value={renderPanel}>
+            <Map />
+          </WorkspaceContext.Provider>
+        </WorkspaceLayout>
+      </ConnectionContext.Provider>
+    </>
   );
 }

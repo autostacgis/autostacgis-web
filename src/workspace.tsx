@@ -12,6 +12,10 @@ export const workspaceTabs = [
 export type WorkspaceTab = (typeof workspaceTabs)[number];
 export const panelId = (tab: WorkspaceTab) =>
   "autostacgis-" + tab.toLowerCase().replaceAll(" ", "-");
+export const ConnectionContext = createContext({
+  catalog: true,
+  backend: true,
+});
 export const WorkspaceContext = createContext<(tab: WorkspaceTab) => ReactNode>(
   () => null,
 );

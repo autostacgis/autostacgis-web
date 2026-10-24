@@ -18,7 +18,7 @@ vi.mock("@kepler.gl/components", () => ({
   },
 }));
 import { AutostacGISPanelsFactory, WorkspaceNavigation } from "./sidebar";
-import { WorkspaceContext } from "./workspace";
+import { WorkspaceContext, ConnectionContext } from "./workspace";
 it("keeps native map controls and all application panels in one keyboard-accessible tab group", () => {
   const toggle = vi.fn();
   const custom = AutostacGISPanelsFactory().panels;
@@ -78,5 +78,30 @@ it("renders application state inside the native custom panel component", () => {
     </WorkspaceContext.Provider>,
   );
   expect(screen.getByLabelText("Connection URL")).toBeTruthy();
+  cleanup();
+});
+
+it("disables backend tabs when disconnected while leaving Settings and map tools available", () => {
+  const toggle = vi.fn(),
+    panels = [
+      { id: "layer", label: "Layers" },
+      ...AutostacGISPanelsFactory().panels,
+    ];
+  render(
+    <ConnectionContext.Provider value={{ catalog: false, backend: false }}>
+      <WorkspaceNavigation
+        panels={panels}
+        activePanel="autostacgis-settings"
+        togglePanel={toggle}
+        PanelTab={() => null}
+      />
+    </ConnectionContext.Provider>,
+  );
+  const plugins = screen.getByRole("tab", { name: "Plugins" });
+  expect(plugins.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(plugins);
+  expect(toggle).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  expect(toggle).toHaveBeenCalledWith("autostacgis-settings");
   cleanup();
 });

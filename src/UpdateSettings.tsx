@@ -1,28 +1,43 @@
+import { toast } from "sonner";
 import { useEffect, useState } from "react";
 export default function UpdateSettings() {
-  const [state, setState] = useState<any>({}),
-    [status, setStatus] = useState("");
+  const [state, setState] = useState<any>({});
   const desktop = window.desktop;
-  useEffect(() => desktop?.onUpdate?.(setState), []);
+  useEffect(
+    () =>
+      desktop?.onUpdate?.((value) => {
+        setState(value);
+        if (value.message) toast.message(value.message, { id: "app-update" });
+        if (value.backend?.message)
+          toast.message(value.backend.message, { id: "backend-update" });
+      }),
+    [],
+  );
   if (!desktop?.update) return null;
   const run = async (action: string) => {
+    const id = toast.loading(
+      action.includes("install")
+        ? "Installing update…"
+        : action === "download"
+          ? "Downloading update…"
+          : "Checking for updates…",
+    );
     try {
-      setState(await desktop.update!(action));
-      setStatus("");
-    } catch (e) {
-      setStatus(String(e));
+      const value = await desktop.update!(action);
+      setState(value);
+      toast.success(
+        (action.startsWith("backend")
+          ? value.backend?.message
+          : value.message) || "Update complete",
+        { id },
+      );
+    } catch (error) {
+      toast.error(String(error), { id });
     }
   };
   return (
     <section>
       <h2>Application updates</h2>
-      <p>
-        Frontend and embedded backend updates are downloaded separately. Your
-        catalog and configuration stay in the backend data directory.
-      </p>
-      <p>
-        {state.message || "Check for a new release when you want to update."}
-      </p>
       <div className="row">
         <button onClick={() => run("check")}>Check app update</button>
         <button disabled={!state.available} onClick={() => run("download")}>
@@ -45,7 +60,6 @@ export default function UpdateSettings() {
           Install backend update
         </button>
       </div>
-      {status && <p role="status">{status}</p>}
     </section>
   );
 }

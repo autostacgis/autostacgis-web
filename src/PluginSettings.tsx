@@ -21,23 +21,18 @@ export default function PluginSettings({
 }) {
   return (
     <>
-      <div
-        className="capabilities"
-        role="tablist"
-        aria-label="Plugin capabilities"
-      >
-        {descriptor.capabilities.map((name) => (
-          <button
-            role="tab"
-            aria-selected={capability === name}
-            className={capability === name ? "active" : ""}
-            key={name}
-            onClick={() => onCapability(name)}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
+      <label>
+        Plugin type
+        <select
+          aria-label="Plugin type"
+          value={capability}
+          onChange={(event) => onCapability(event.target.value)}
+        >
+          {descriptor.capabilities.map((name) => (
+            <option key={name}>{name}</option>
+          ))}
+        </select>
+      </label>
       {descriptor.plugins
         .filter((plugin) => plugin.capability === capability)
         .map((plugin) => (
@@ -49,6 +44,7 @@ export default function PluginSettings({
             <summary>
               {plugin.id} <small>{plugin.version}</small>
             </summary>
+            <p>{plugin.description}</p>
             <label>
               <input
                 type="checkbox"
@@ -69,6 +65,7 @@ export default function PluginSettings({
             <label>
               Settings (JSON)
               <JsonEditor
+                schema={plugin.settings_schema}
                 label={`${plugin.id} settings`}
                 value={
                   settings[plugin.id] ??

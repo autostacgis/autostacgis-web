@@ -3,6 +3,8 @@ export type Plugin = {
   id: string;
   version?: string;
   capability: string;
+  description?: string;
+  default_config?: Json;
   requires: string[];
   defaults: Json;
   settings_schema: Json;

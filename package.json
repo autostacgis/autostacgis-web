@@ -1,6 +1,6 @@
 {
   "name": "autostacgis-web",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Kepler.gl STAC workspace and optional bundled PostgreSQL backend",
   "author": "AutostacGIS",
@@ -37,6 +37,7 @@
     "react-redux": "^9.1.0",
     "redux": "^5.0.1",
     "semver": "^7.8.5",
+    "sonner": "^2.0.8",
     "styled-components": "^6.1.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
