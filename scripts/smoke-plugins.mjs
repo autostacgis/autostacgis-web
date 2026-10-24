@@ -1,8 +1,9 @@
 import { createRequire } from "node:module";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
+process.env.AUTOSTACGIS_DEBUG_STACK_SECONDS = "30";
 const require = createRequire(import.meta.url);
 const { Backend } = require("../electron/backend.cjs");
 const directory =
@@ -163,6 +164,13 @@ print("STAC_INPUT:"+json.dumps(record.item))
 } finally {
   await backend.stop();
   if (failure) {
+    const jobLogs = path.join(directory, "store", "data", "logs");
+    try {
+      for (const name of await readdir(jobLogs)) {
+        const log = await readFile(path.join(jobLogs, name), "utf8");
+        backend.emit("Job " + name + ":\n" + log.slice(-18000) + "\n");
+      }
+    } catch {}
     for (const name of ["worker", "api"]) {
       try {
         const log = await readFile(
