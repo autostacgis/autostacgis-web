@@ -80,13 +80,14 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_bounds
 from types import SimpleNamespace
+from pathlib import Path
 from autostacgis import Record
 from autostacgis.stac import Stac
 from autostacgis.raster_metadata import inspect_raster
 path=sys.argv[1]
 with rasterio.open(path,"w",driver="GTiff",width=8,height=8,count=1,dtype="uint16",crs="EPSG:4326",transform=from_bounds(0,0,1,1,8,8)) as dst:
     dst.write(np.ones((1,8,8),dtype="uint16"))
-item={"type":"Feature","stac_version":"1.1.0","id":"metadata-smoke","geometry":None,"properties":{"datetime":"2026-01-01T00:00:00Z","ready":True},"links":[],"assets":{"data":{"href":path,"type":"image/tiff"}}}
+item={"type":"Feature","stac_version":"1.1.0","id":"metadata-smoke","geometry":None,"properties":{"datetime":"2026-01-01T00:00:00Z","ready":True},"links":[],"assets":{"data":{"href":Path(path).resolve().as_uri(),"type":"image/tiff"}}}
 record=Record(item)
 inspect_raster(record,{},SimpleNamespace(stac=Stac()))
 print("STAC_INPUT:"+json.dumps(record.item))
