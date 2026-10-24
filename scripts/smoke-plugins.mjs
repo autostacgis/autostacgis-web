@@ -32,8 +32,13 @@ try {
   const configuration = {
     solver: { backward_chain: {} },
     goal: {
-      "metadata-value": { jsonata: "item.properties.ready", value: true },
+      "metadata-value": [
+        { jsonata: "item.properties.ready", value: true },
+        { jsonata: 'asset."data_state:statistics_calculated"', value: true },
+      ],
     },
+    process: { statistics: {} },
+    services: { executor: { backend: "multiprocessing", workers: 2 } },
     metadata_structure: {
       schemas: [],
       inline: {
@@ -42,6 +47,11 @@ try {
             properties: {
               ready: { type: "boolean" },
               "autostacgis:source_item_id": { type: "string" },
+              "autostacgis:source_id": { type: "string" },
+              "processing:software": {
+                type: "object",
+                additionalProperties: { type: "string" },
+              },
             },
           },
         },
@@ -133,6 +143,9 @@ print("STAC_INPUT:"+json.dumps(record.item))
   }
   assert.equal(result.value.state, "succeeded", JSON.stringify(result.value));
   assert.equal(result.value.result.features[0].properties.ready, true);
+  const asset = result.value.result.features[0].assets.data;
+  assert.equal(asset["data_state:statistics_calculated"], true);
+  assert.equal(asset.bands[0].statistics.mean, 1);
   await backend.stop();
   connection = await backend.start();
   result = await request("plugins");
