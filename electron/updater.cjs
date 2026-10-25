@@ -1,16 +1,33 @@
 const semver = require("semver");
+const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const backendFeed =
-  "https://github.com/autostacgis/autostacgis-postgresql/releases/latest/download/backend-release.json";
+  "https://github.com/autostacgis/autostacgis-postgresql/releases/download/v0.0.1/backend-release.json";
 class Updates {
   constructor({ app, backend, send, updater }) {
-    const autoUpdater = (this.updater =
-      updater || require("electron-updater").autoUpdater);
+    if (!updater) {
+      const {
+        MacUpdater,
+        NsisUpdater,
+        AppImageUpdater,
+      } = require("electron-updater");
+      const { prereleaseUpdater } = require("./prerelease-updater.cjs");
+      const metadata = require(path.join(app.getAppPath(), "package.json"));
+      const Base =
+        process.platform === "darwin"
+          ? MacUpdater
+          : process.platform === "win32"
+            ? NsisUpdater
+            : AppImageUpdater;
+      updater = prereleaseUpdater(Base, metadata.autostacgisBuild);
+    }
+    const autoUpdater = (this.updater = updater);
     this.app = app;
     this.backend = backend;
     this.send = send;
     this.state = { available: false, downloaded: false, backend: {} };
+    autoUpdater.allowPrerelease = true;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.on("update-available", (info) =>
@@ -110,11 +127,28 @@ class Updates {
       (await fs.readdir(directory))
         .find((name) => name.startsWith("autostacgis_postgresql-"))
         ?.split("-")[1] || "0.0.0";
+    let changed = semver.gt(manifest.version, current);
+    if (manifest.version === "0.0.1" && current === "0.0.1") {
+      for (const wheel of manifest.wheels) {
+        try {
+          const file = await fs.readFile(
+            path.join(directory, path.basename(new URL(wheel.url).pathname)),
+          );
+          if (
+            crypto.createHash("sha256").update(file).digest("hex") !==
+            wheel.sha256
+          )
+            changed = true;
+        } catch {
+          changed = true;
+        }
+      }
+    }
     return this.set({
       backend: {
-        available: semver.gt(manifest.version, current),
+        available: changed,
         version: manifest.version,
-        message: semver.gt(manifest.version, current)
+        message: changed
           ? `Backend ${manifest.version} is available.`
           : "The backend is up to date.",
       },
@@ -134,6 +168,10 @@ class Updates {
       this.backend.data,
       "releases",
       this.release.version,
+      crypto
+        .createHash("sha256")
+        .update(JSON.stringify(this.release.wheels))
+        .digest("hex"),
       "wheels",
     );
     try {

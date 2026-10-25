@@ -1,6 +1,6 @@
 {
   "name": "autostacgis-web",
-  "version": "0.3.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Kepler.gl STAC workspace and optional bundled PostgreSQL backend",
   "author": "AutostacGIS",
@@ -118,7 +118,7 @@
         "provider": "github",
         "owner": "autostacgis",
         "repo": "autostacgis-web",
-        "releaseType": "release"
+        "releaseType": "prerelease"
       }
     ]
   },

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 vi.mock("./store", () => ({ store: { dispatch: vi.fn() } }));
 vi.mock("./Map", async () => {
@@ -32,6 +32,8 @@ vi.mock("./Map", async () => {
   };
 });
 import App from "./App";
+import type { BackendStatus } from "./types";
+import { notify } from "./notifications";
 const descriptor = {
   capabilities: [
     "trigger",
@@ -74,6 +76,8 @@ const descriptor = {
   },
 };
 beforeEach(() => {
+  HTMLElement.prototype.setPointerCapture = () => {};
+  HTMLElement.prototype.releasePointerCapture = () => {};
   const values = new Map<string, string>();
   Object.defineProperty(window, "localStorage", {
     configurable: true,
@@ -86,6 +90,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  notify.dismiss();
   cleanup();
   vi.unstubAllGlobals();
   delete window.desktop;
@@ -243,4 +248,62 @@ it("keeps remote connection fields in Settings and starts the embedded service o
   expect(window.localStorage.getItem("api-url")).not.toBe(
     "http://127.0.0.1:58200/",
   );
+});
+
+it("shows startup status and a live bounded installation tail in Sonner", async () => {
+  let log: (line: string) => void = () => {};
+  let finish: (value: any) => void = () => {};
+  window.desktop = {
+    chooseInputDirectory: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    status: vi.fn().mockResolvedValue({
+      installed: false,
+      running: false,
+      message: "Download the updated embedded backend",
+    }),
+    download: vi.fn(
+      () =>
+        new Promise<BackendStatus>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+    onLog: (callback) => {
+      log = callback;
+      return () => {};
+    },
+  };
+  render(<App />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Check status" }));
+  expect(
+    (await screen.findByText("Download the updated embedded backend")).closest(
+      "[data-sonner-toast]",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "AutostacGIS" }).parentElement
+      ?.textContent,
+  ).not.toContain("Download the updated embedded backend");
+  await user.click(
+    screen.getByRole("button", { name: "Download embedded backend" }),
+  );
+  act(() => {
+    log("x".repeat(31000) + "\nfinal insta");
+    log("llation line\n");
+  });
+  const tail = await screen.findByLabelText("Installation log");
+  expect(tail.textContent).toContain("final installation line");
+  expect(tail.textContent!.length).toBeLessThanOrEqual(30000);
+  expect(tail.closest("[data-sonner-toast]")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Collapse log" }));
+  expect(screen.queryByLabelText("Installation log")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Expand log" }));
+  expect(screen.getByLabelText("Installation log").textContent).toContain(
+    "final installation line",
+  );
+  await act(async () => {
+    finish({ installed: true, running: false });
+  });
+  await screen.findByText("Embedded backend ready");
 });

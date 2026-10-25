@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "./notifications";
 import type { Api } from "./api";
 import type { Json } from "./types";
 export default function WorkflowLibrary({
@@ -29,7 +29,7 @@ export default function WorkflowLibrary({
     try {
       await task();
     } catch (error) {
-      toast.error(String(error));
+      notify.error(String(error));
     } finally {
       setBusy(false);
     }
@@ -86,7 +86,7 @@ export default function WorkflowLibrary({
             );
             activate(value.document);
             setActive(null);
-            toast.success("Workflow activated");
+            notify.success("Workflow activated");
           })
         }
       >
@@ -111,7 +111,7 @@ export default function WorkflowLibrary({
           onClick={() => {
             activate(saved.find((row) => row.id === local).document);
             setActive(local);
-            toast.success("Workflow activated");
+            notify.success("Workflow activated");
           }}
         >
           Activate saved
@@ -133,7 +133,7 @@ export default function WorkflowLibrary({
               if (active === local) setActive(null);
               setLocal("");
               await refreshSaved();
-              toast.success("Workflow deleted");
+              notify.success("Workflow deleted");
             })
           }
         >
@@ -151,7 +151,7 @@ export default function WorkflowLibrary({
               run(async () => {
                 await api.request(path(active), "PUT", document());
                 await refreshSaved();
-                toast.success("Workflow updated");
+                notify.success("Workflow updated");
               })
             }
           >
@@ -190,7 +190,7 @@ export default function WorkflowLibrary({
                 }
                 await refreshSaved();
                 setDialog(null);
-                toast.success(
+                notify.success(
                   dialog === "rename" ? "Workflow renamed" : "Workflow saved",
                 );
               });

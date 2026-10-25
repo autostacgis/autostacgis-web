@@ -414,3 +414,36 @@ pre {
 .workspace-version {
   margin-top: 2px;
 }
+
+.notification-log {
+  width: 100%;
+  padding: 12px;
+  background: #182832;
+  color: #e6edf0;
+  border: 1px solid #40535f;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px #0008;
+}
+.notification-log[data-state="error"] {
+  border-color: #c75b5b;
+}
+.notification-log-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.notification-log-heading strong {
+  flex: 1;
+}
+.notification-log-heading button {
+  padding: 2px 7px;
+  min-width: 26px;
+}
+.notification-log pre {
+  margin: 8px 0 0;
+  max-height: min(260px, 45vh);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}

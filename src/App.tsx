@@ -1,4 +1,4 @@
-import { Toaster, toast } from "sonner";
+import NotificationCenter, { notify } from "./notifications";
 import WorkflowLibrary from "./WorkflowLibrary";
 import { useEffect, useState } from "react";
 import {
@@ -14,12 +14,9 @@ import PluginCatalog from "./PluginCatalog";
 import UpdateSettings from "./UpdateSettings";
 import PluginSettings from "./PluginSettings";
 import { Api, assetHref, nextPage, resolveItem } from "./api";
-import { buildConfiguration } from "./configuration";
+import { buildConfiguration, initialConfiguration } from "./configuration";
 import type { BackendStatus, Descriptor, Job, Json } from "./types";
-const empty = {
-  solver: { backward_chain: {} },
-  goal: { "metadata-value": { path: "properties.ready", value: true } },
-};
+const empty = initialConfiguration;
 export default function App() {
   const [url, setUrl] = useState(
     window.localStorage.getItem("api-url") || "http://127.0.0.1:8080",
@@ -34,7 +31,7 @@ export default function App() {
       : "remote",
   );
   const setStatus = (message: string) => {
-    toast.message(message);
+    notify.message(message);
   };
   const [setup, setSetup] = useState(
     !window.localStorage.getItem("connection-setup-complete"),
@@ -64,26 +61,37 @@ export default function App() {
     installed: false,
     running: false,
   });
-  const [logs, setLogs] = useState("");
   const [collections, setCollections] = useState<string[]>([]);
   const key = (item: Json) =>
     JSON.stringify([item.collection ?? null, item.id]);
   useEffect(
     () =>
-      window.desktop?.onLog((line) =>
-        setLogs((previous) => (previous + "\n" + line).slice(-30000)),
-      ),
+      window.desktop?.onLog((line) => notify.logs.append("backend-log", line)),
     [],
   );
-  const perform = async (operation: () => Promise<void>) => {
+  const perform = async (operation: () => Promise<void>, logTitle?: string) => {
     setBusy(true);
-    const notification = toast.loading("Working…");
+    const notification = logTitle
+      ? notify.logs.start("backend-log", logTitle)
+      : notify.loading("Working…");
+    let failed = false;
     try {
       await operation();
     } catch (error) {
-      toast.error(String(error));
+      failed = true;
+      if (logTitle) {
+        notify.logs.append("backend-log", "\n" + String(error));
+        notify.logs.finish(
+          "backend-log",
+          "Embedded backend operation failed",
+          "error",
+        );
+      } else notify.error(error);
     } finally {
-      toast.dismiss(notification);
+      if (logTitle) {
+        if (!failed)
+          notify.logs.finish("backend-log", "Embedded backend ready");
+      } else notify.dismiss(notification);
       setBusy(false);
     }
   };
@@ -231,7 +239,7 @@ export default function App() {
       setDocument(value);
       setRequest(JSON.stringify(value, null, 2));
     } catch (error) {
-      toast.error(String(error));
+      notify.error(String(error));
     }
   }
   async function openAsset(
@@ -333,15 +341,16 @@ export default function App() {
                 <button
                   disabled={busy}
                   onClick={() =>
-                    perform(async () =>
-                      setBackend(await window.desktop!.status()),
-                    )
+                    perform(async () => {
+                      const value = await window.desktop!.status();
+                      setBackend(value);
+                      if (value.message) notify.message(value.message);
+                    })
                   }
                 >
                   Check status
                 </button>
               </div>
-              <p>{backend.message}</p>
               {backend.running && backend.url && (
                 <details>
                   <summary>Connection details for other clients</summary>
@@ -396,10 +405,8 @@ export default function App() {
                   onClick={() =>
                     perform(async () => {
                       setBackend(await window.desktop!.download());
-                      setStatus(
-                        "Embedded backend downloaded. Choose Start and connect when ready.",
-                      );
-                    })
+                      setStatus("Embedded backend downloaded");
+                    }, "Installing embedded backend…")
                   }
                 >
                   Download embedded backend
@@ -411,7 +418,7 @@ export default function App() {
                       const value = await window.desktop!.start();
                       setBackend(value);
                       await connect(value.url!, value.token!, false);
-                    })
+                    }, "Starting embedded backend…")
                   }
                 >
                   Start and connect
@@ -433,7 +440,6 @@ export default function App() {
                   Stop embedded backend
                 </button>
               </div>
-              {logs && <pre aria-label="Backend log">{logs}</pre>}
             </>
           ) : (
             <p>
@@ -706,7 +712,15 @@ export default function App() {
               <article key={job.id}>
                 <b>{job.state}</b>
                 <small>{job.id}</small>
-                {job.error && <p>{job.error}</p>}
+                {job.error && (
+                  <button
+                    onClick={() =>
+                      notify.error(job.error, { id: "job:" + job.id })
+                    }
+                  >
+                    View error
+                  </button>
+                )}
                 <div className="row">
                   <button
                     onClick={() =>
@@ -757,7 +771,7 @@ export default function App() {
   if (setup)
     return (
       <>
-        <Toaster position="top-center" theme="dark" richColors closeButton />
+        <NotificationCenter />
         <main className="connection-screen">
           <div className="connection-card">
             <img src="/icon.svg" alt="" />
@@ -772,7 +786,7 @@ export default function App() {
     );
   return (
     <>
-      <Toaster position="top-center" theme="dark" richColors closeButton />
+      <NotificationCenter />
       <ConnectionContext.Provider
         value={{ catalog: !!api, backend: !!descriptor }}
       >

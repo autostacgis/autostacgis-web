@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { notify } from "./notifications";
 import type { Json } from "./types";
 
 type Props = {
@@ -246,6 +247,9 @@ export default function JsonEditor({
   } catch (e) {
     error = String(e);
   }
+  useEffect(() => {
+    if (!error) notify.dismiss("json:" + label);
+  }, [error, label]);
   return (
     <div className="json-editor" role="group" aria-label={`${label} editor`}>
       <div className="json-toolbar">
@@ -265,6 +269,13 @@ export default function JsonEditor({
         <textarea
           aria-label={label}
           spellCheck={false}
+          aria-invalid={!!error}
+          onBlur={() => {
+            if (error)
+              notify.error(`${label}: Invalid JSON: ${error}`, {
+                id: "json:" + label,
+              });
+          }}
           value={value}
           readOnly={readOnly}
           onChange={(e) => onChange?.(e.target.value)}
@@ -278,7 +289,6 @@ export default function JsonEditor({
           change={(next) => onChange?.(JSON.stringify(next, null, 2))}
         />
       )}
-      {error && <p role="alert">Invalid JSON: {error}</p>}
     </div>
   );
 }

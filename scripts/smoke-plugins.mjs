@@ -63,8 +63,8 @@ try {
   };
   let published = await request("workflows/available");
   assert.equal(published.response.status, 200, JSON.stringify(published.value));
-  assert(published.value.workflows.some((row) => row.id === "metadata-value"));
-  published = await request("workflows/published/metadata-value");
+  assert(published.value.workflows.some((row) => row.id === "mosaic"));
+  published = await request("workflows/published/mosaic");
   assert.equal(published.response.status, 200, JSON.stringify(published.value));
   const workflowName = "smoke-workflow-" + crypto.randomUUID();
   let saved = await request("workflows", {
@@ -132,7 +132,7 @@ print("STAC_INPUT:"+json.dumps(record.item))
   assert(
     result.value.plugins.some(
       (plugin) =>
-        plugin.id === "registry-smoke-check" && plugin.version === "1.1.0",
+        plugin.id === "registry-smoke-check" && plugin.version === "0.0.1",
     ),
   );
   result = await request("jobs", { configuration, inputs: [item] });

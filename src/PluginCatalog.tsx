@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { notify } from "./notifications";
 import { useEffect, useState } from "react";
 import type { Api } from "./api";
 import type { Json } from "./types";
@@ -14,14 +14,14 @@ export default function PluginCatalog({
   const [plugins, setPlugins] = useState<Json[]>([]),
     [busy, setBusy] = useState(false);
   const setStatus = (value: string) => {
-    toast.message(value);
+    notify.message(value);
   };
   async function run(operation: () => Promise<void>) {
     setBusy(true);
     try {
       await operation();
     } catch (error) {
-      toast.error(String(error));
+      notify.error(String(error));
     } finally {
       setBusy(false);
     }

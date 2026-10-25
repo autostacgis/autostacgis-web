@@ -177,15 +177,14 @@ class Backend {
         running: Boolean(this.child && this.child.exitCode === null),
         ...(this.connection || {}),
         message: installed
-          ? "Native PostgreSQL/PostGIS and Python are ready."
-          : "Download the updated embedded backend.",
+          ? "Embedded backend ready"
+          : "Download the updated embedded backend",
       };
     } catch {
       return {
         installed: false,
         running: false,
-        message:
-          "Download the embedded backend once to use it offline. No Docker or system Python is required.",
+        message: "Download the embedded backend",
       };
     }
   }

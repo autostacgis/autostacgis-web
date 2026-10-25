@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { notify } from "./notifications";
 import { useEffect, useState } from "react";
 export default function UpdateSettings() {
   const [state, setState] = useState<any>({});
@@ -7,15 +7,17 @@ export default function UpdateSettings() {
     () =>
       desktop?.onUpdate?.((value) => {
         setState(value);
-        if (value.message) toast.message(value.message, { id: "app-update" });
+        if (value.message) notify.message(value.message, { id: "app-update" });
         if (value.backend?.message)
-          toast.message(value.backend.message, { id: "backend-update" });
+          notify.message(value.backend.message, { id: "backend-update" });
       }),
     [],
   );
   if (!desktop?.update) return null;
   const run = async (action: string) => {
-    const id = toast.loading(
+    if (action === "backend-install")
+      notify.logs.start("backend-log", "Installing embedded backend update…");
+    const id = notify.loading(
       action.includes("install")
         ? "Installing update…"
         : action === "download"
@@ -25,14 +27,20 @@ export default function UpdateSettings() {
     try {
       const value = await desktop.update!(action);
       setState(value);
-      toast.success(
+      if (action === "backend-install")
+        notify.logs.finish("backend-log", "Embedded backend updated");
+      notify.success(
         (action.startsWith("backend")
           ? value.backend?.message
           : value.message) || "Update complete",
         { id },
       );
     } catch (error) {
-      toast.error(String(error), { id });
+      if (action === "backend-install") {
+        notify.logs.append("backend-log", "\n" + String(error));
+        notify.logs.finish("backend-log", "Backend update failed", "error");
+      }
+      notify.error(error, { id });
     }
   };
   return (
@@ -48,7 +56,6 @@ export default function UpdateSettings() {
         </button>
       </div>
       <h3>Embedded backend updates</h3>
-      <p>{state.backend?.message}</p>
       <div className="row">
         <button onClick={() => run("backend-check")}>
           Check backend update
