@@ -45,7 +45,7 @@ app.whenReady().then(() => {
       ? path.join(process.resourcesPath, "backend")
       : path.resolve(__dirname, "../resources/backend"),
     data: path.join(app.getPath("userData"), "backend"),
-    fetcher: (url) => net.fetch(url),
+    fetcher: (url) => net.fetch(url, { cache: "no-store" }),
     log: (message) => window?.webContents.send("backend:log", message),
   });
   window = new BrowserWindow({

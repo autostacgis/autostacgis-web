@@ -121,7 +121,7 @@ print("STAC_INPUT:"+json.dumps(record.item))
   assert.equal(result.response.status, 422);
   assert.match(result.value.detail, /Undeclared metadata field/);
   const source =
-    '"""Verify a record condition in the installed plugin smoke test."""\nID = "registry-smoke-check"\nVERSION = "1.1.0"\nCAPABILITY = "checks"\nREQUIRES = []\nDEPENDENCIES = ["packaging>=24,<27"]\nclass Check:\n    def __call__(self, *args): return True\nIMPLEMENTATION = Check\n';
+    '"""Verify a record condition in the installed plugin smoke test."""\nID = "registry-smoke-check"\nVERSION = "0.0.1"\nCAPABILITY = "checks"\nREQUIRES = []\nDEPENDENCIES = ["packaging>=24,<27"]\nclass Check:\n    def __call__(self, *args): return True\nIMPLEMENTATION = Check\n';
   result = await request("plugins/install-file", {
     filename: "registry_smoke_check.py",
     source,
